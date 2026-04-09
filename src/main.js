@@ -2,6 +2,9 @@ import './style.css'
 
 const app = document.querySelector('#app')
 const PIXEL_WIDTH = 96
+const THRESHOLD = 128
+const BACKGROUND_COLOR = [6, 10, 8]
+const FOREGROUND_COLOR = [36, 214, 118]
 
 app.innerHTML = `
   <main class="shell">
@@ -58,6 +61,22 @@ function setStatus(message, tone = 'muted') {
   statusEl.dataset.tone = tone
 }
 
+function applyBitmapEffect(width, height) {
+  const frame = sourceContext.getImageData(0, 0, width, height)
+  const { data } = frame
+
+  for (let i = 0; i < data.length; i += 4) {
+    const luminance = (0.299 * data[i]) + (0.587 * data[i + 1]) + (0.114 * data[i + 2])
+    const color = luminance >= THRESHOLD ? FOREGROUND_COLOR : BACKGROUND_COLOR
+
+    data[i] = color[0]
+    data[i + 1] = color[1]
+    data[i + 2] = color[2]
+  }
+
+  sourceContext.putImageData(frame, 0, 0)
+}
+
 function renderFrame() {
   if (videoEl.readyState < 2) {
     frameId = requestAnimationFrame(renderFrame)
@@ -80,14 +99,15 @@ function renderFrame() {
     sourceCanvas.height = sourceHeight
   }
 
-  if (outputCanvas.width !== videoWidth || outputCanvas.height !== videoHeight) {
-    outputCanvas.width = videoWidth
-    outputCanvas.height = videoHeight
+  if (outputCanvas.width !== sourceWidth || outputCanvas.height !== sourceHeight) {
+    outputCanvas.width = sourceWidth
+    outputCanvas.height = sourceHeight
   }
 
   sourceContext.drawImage(videoEl, 0, 0, sourceWidth, sourceHeight)
+  applyBitmapEffect(sourceWidth, sourceHeight)
   outputContext.clearRect(0, 0, outputCanvas.width, outputCanvas.height)
-  outputContext.drawImage(sourceCanvas, 0, 0, outputCanvas.width, outputCanvas.height)
+  outputContext.drawImage(sourceCanvas, 0, 0)
 
   frameId = requestAnimationFrame(renderFrame)
 }
