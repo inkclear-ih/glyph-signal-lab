@@ -143,6 +143,8 @@ app.innerHTML = `
             <button id="reset-controls" type="button" class="button-secondary">Reset</button>
             <button id="export-png" type="button">Export PNG</button>
             <button id="export-sequence" type="button">Export PNG Seq</button>
+            <button id="export-webm" type="button">Export WebM</button>
+            <button id="stop-capture" type="button" class="button-secondary" disabled>Stop Capture</button>
           </div>
         </div>
 
@@ -164,11 +166,15 @@ app.innerHTML = `
         </label>
 
         <label class="control">
-          <span>Seq Duration</span>
+          <span>Capture Duration</span>
           <select id="sequence-duration">
             <option value="1" selected>1s</option>
             <option value="10">10s</option>
+            <option value="20">20s</option>
+            <option value="50">50s</option>
+            <option value="stop">Until stop</option>
           </select>
+          <small class="control-note">Until stop applies to WebM only.</small>
         </label>
 
         <label class="control">
@@ -224,7 +230,8 @@ const sourceContext = sourceCanvas.getContext('2d')
 
 let frameId = null
 let isFrozen = false
-let sequenceExportId = 1
+let isSequenceExporting = false
+let activeWebmCapture = null
 
 outputContext.imageSmoothingEnabled = false
 sourceContext.imageSmoothingEnabled = false
@@ -356,11 +363,32 @@ const freezeToggleButton = document.querySelector('#freeze-toggle')
 const resetControlsButton = document.querySelector('#reset-controls')
 const exportPngButton = document.querySelector('#export-png')
 const exportSequenceButton = document.querySelector('#export-sequence')
+const exportWebmButton = document.querySelector('#export-webm')
+const stopCaptureButton = document.querySelector('#stop-capture')
 const fullscreenToggleButton = document.querySelector('#fullscreen-toggle')
 
 function updateFreezeButton() {
   freezeToggleButton.textContent = isFrozen ? 'Resume Live' : 'Freeze Frame'
   freezeToggleButton.setAttribute('aria-pressed', String(isFrozen))
+}
+
+function isUnlimitedCaptureDuration() {
+  return settings.sequenceDuration === 'stop'
+}
+
+function getCaptureDurationSeconds() {
+  return isUnlimitedCaptureDuration() ? null : Number(settings.sequenceDuration)
+}
+
+function updateCaptureButtons() {
+  const isWebmRecording = activeWebmCapture !== null
+  const isUnlimited = isUnlimitedCaptureDuration()
+
+  exportWebmButton.disabled = isWebmRecording || isSequenceExporting
+  exportSequenceButton.disabled = isWebmRecording || isSequenceExporting || isUnlimited
+  stopCaptureButton.disabled = !isWebmRecording
+  exportSequenceButton.title = isUnlimited ? 'Until stop is available for WebM only.' : ''
+  stopCaptureButton.title = isWebmRecording ? 'Stop the active WebM capture.' : 'No WebM capture is active.'
 }
 
 function syncControlValues() {
@@ -403,12 +431,30 @@ function syncControlValues() {
   exportScaleInput.value = settings.exportSize
   sequenceDurationInput.value = settings.sequenceDuration
   sequenceFpsInput.value = settings.sequenceFps
+  updateCaptureButtons()
 }
 
 function getExportDimensions() {
   return settings.exportSize
     .split('x')
     .map((value) => Number(value))
+}
+
+function createExportCanvas() {
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+  const [width, height] = getExportDimensions()
+
+  canvas.width = width
+  canvas.height = height
+  context.imageSmoothingEnabled = false
+
+  return { canvas, context, width, height }
+}
+
+function drawProcessedFrame(context, width, height) {
+  context.clearRect(0, 0, width, height)
+  context.drawImage(outputCanvas, 0, 0, width, height)
 }
 
 function canvasToBlob(canvas) {
@@ -430,10 +476,39 @@ function waitForNextAnimationFrame() {
   })
 }
 
+function waitForTimeout(durationMs) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, durationMs)
+  })
+}
+
 async function waitForCaptureTime(targetTime) {
   while (performance.now() < targetTime) {
     await waitForNextAnimationFrame()
   }
+}
+
+function formatExportTimestamp(date = new Date()) {
+  const year = String(date.getFullYear()).slice(-2)
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  const seconds = String(date.getSeconds()).padStart(2, '0')
+
+  return `${year}${month}${day}_${hours}${minutes}${seconds}`
+}
+
+function createStillPngFilename(timestamp) {
+  return `gsl_pic_${timestamp}.png`
+}
+
+function createSequenceFrameFilename(timestamp, frameNumber) {
+  return `gsl_seq_${timestamp}_${String(frameNumber).padStart(4, '0')}.png`
+}
+
+function createWebmFilename(timestamp) {
+  return `gsl_vid_${timestamp}.webm`
 }
 
 function updateFullscreenButton() {
@@ -441,6 +516,20 @@ function updateFullscreenButton() {
   fullscreenToggleButton.textContent = isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'
   fullscreenToggleButton.setAttribute('aria-label', isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen')
   fullscreenToggleButton.setAttribute('aria-pressed', String(isFullscreen))
+}
+
+function getSupportedWebmMimeType() {
+  if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) {
+    return null
+  }
+
+  const mimeTypes = [
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+  ]
+
+  return mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType)) ?? null
 }
 
 freezeToggleButton.addEventListener('click', () => {
@@ -460,19 +549,135 @@ exportPngButton.addEventListener('click', () => {
     return
   }
 
-  const exportCanvas = document.createElement('canvas')
-  const exportContext = exportCanvas.getContext('2d')
-  const [exportWidth, exportHeight] = getExportDimensions()
+  const exportTimestamp = formatExportTimestamp()
+  const { canvas: exportCanvas, context: exportContext, width: exportWidth, height: exportHeight } = createExportCanvas()
 
-  exportCanvas.width = exportWidth
-  exportCanvas.height = exportHeight
-  exportContext.imageSmoothingEnabled = false
-  exportContext.drawImage(outputCanvas, 0, 0, exportWidth, exportHeight)
+  drawProcessedFrame(exportContext, exportWidth, exportHeight)
 
   const link = document.createElement('a')
   link.href = exportCanvas.toDataURL('image/png')
-  link.download = 'glyph-signal-lab-export.png'
+  link.download = createStillPngFilename(exportTimestamp)
   link.click()
+})
+
+exportWebmButton.addEventListener('click', async () => {
+  if (!outputCanvas.width || !outputCanvas.height) {
+    setStatus('Nothing to export yet.', 'error')
+    return
+  }
+
+  const mimeType = getSupportedWebmMimeType()
+
+  if (!mimeType) {
+    setStatus('WebM recording is unavailable in this browser.', 'error')
+    return
+  }
+
+  const durationSeconds = getCaptureDurationSeconds()
+  const framesPerSecond = Number(settings.sequenceFps)
+  const exportTimestamp = formatExportTimestamp()
+  const { canvas: exportCanvas, context: exportContext, width: exportWidth, height: exportHeight } = createExportCanvas()
+  const stream = exportCanvas.captureStream(framesPerSecond)
+  const recorder = new MediaRecorder(stream, { mimeType })
+  const chunks = []
+  let exportFailed = false
+  let stopRequested = false
+
+  drawProcessedFrame(exportContext, exportWidth, exportHeight)
+
+  const stopped = new Promise((resolve, reject) => {
+    recorder.addEventListener('dataavailable', (event) => {
+      if (event.data && event.data.size > 0) {
+        chunks.push(event.data)
+      }
+    })
+
+    recorder.addEventListener('stop', resolve, { once: true })
+    recorder.addEventListener('error', () => {
+      exportFailed = true
+      reject(new Error('WebM recording failed.'))
+    }, { once: true })
+  })
+
+  try {
+    activeWebmCapture = {
+      stop() {
+        if (recorder.state !== 'inactive') {
+          stopRequested = true
+          recorder.stop()
+        }
+      },
+    }
+    updateCaptureButtons()
+    setStatus(
+      durationSeconds === null
+        ? `Recording WebM at ${framesPerSecond} FPS until stopped...`
+        : `Recording ${durationSeconds}s WebM at ${framesPerSecond} FPS...`,
+      'muted',
+    )
+    recorder.start()
+
+    const startTime = performance.now()
+
+    if (durationSeconds === null) {
+      let frameIndex = 0
+
+      while (recorder.state !== 'inactive') {
+        const targetTime = startTime + ((frameIndex * 1000) / framesPerSecond)
+        await waitForCaptureTime(targetTime)
+
+        if (recorder.state === 'inactive') {
+          break
+        }
+
+        drawProcessedFrame(exportContext, exportWidth, exportHeight)
+        frameIndex += 1
+      }
+    } else {
+      const frameTotal = durationSeconds * framesPerSecond
+
+      for (let frameIndex = 0; frameIndex < frameTotal; frameIndex += 1) {
+        const targetTime = startTime + ((frameIndex * 1000) / framesPerSecond)
+        await waitForCaptureTime(targetTime)
+        drawProcessedFrame(exportContext, exportWidth, exportHeight)
+      }
+
+      await waitForTimeout(1000 / framesPerSecond)
+      recorder.stop()
+    }
+    await stopped
+
+    const blob = new Blob(chunks, { type: mimeType })
+    const downloadUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+
+    link.href = downloadUrl
+    link.download = createWebmFilename(exportTimestamp)
+    link.click()
+
+    URL.revokeObjectURL(downloadUrl)
+    setStatus(stopRequested ? 'WebM capture stopped and saved.' : 'WebM export saved.', 'success')
+  } catch {
+    if (!exportFailed && recorder.state !== 'inactive') {
+      recorder.stop()
+    }
+
+    setStatus('WebM export failed.', 'error')
+  } finally {
+    activeWebmCapture = null
+    stream.getTracks().forEach((track) => track.stop())
+    updateCaptureButtons()
+  }
+})
+
+stopCaptureButton.addEventListener('click', () => {
+  if (!activeWebmCapture) {
+    setStatus('No WebM capture is active.', 'muted')
+    return
+  }
+
+  setStatus('Stopping WebM capture...', 'muted')
+  activeWebmCapture.stop()
 })
 
 fullscreenToggleButton.addEventListener('click', async () => {
@@ -506,20 +711,22 @@ exportSequenceButton.addEventListener('click', async () => {
     return
   }
 
+  if (isUnlimitedCaptureDuration()) {
+    setStatus('Until stop is currently available for WebM export only.', 'error')
+    return
+  }
+
   try {
+    isSequenceExporting = true
+    updateCaptureButtons()
+    setStatus('Choose a folder for the PNG sequence export...', 'muted')
     const directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' })
-    const durationSeconds = Number(settings.sequenceDuration)
+    const durationSeconds = getCaptureDurationSeconds()
     const framesPerSecond = Number(settings.sequenceFps)
     const frameTotal = durationSeconds * framesPerSecond
-    const sequenceName = `gsl_seq${String(sequenceExportId).padStart(3, '0')}`
-    const exportCanvas = document.createElement('canvas')
-    const exportContext = exportCanvas.getContext('2d')
-    const [exportWidth, exportHeight] = getExportDimensions()
+    const exportTimestamp = formatExportTimestamp()
+    const { canvas: exportCanvas, context: exportContext, width: exportWidth, height: exportHeight } = createExportCanvas()
 
-    exportCanvas.width = exportWidth
-    exportCanvas.height = exportHeight
-    exportContext.imageSmoothingEnabled = false
-    exportSequenceButton.disabled = true
     setStatus(`Exporting ${frameTotal} PNG frames...`, 'muted')
 
     const startTime = performance.now()
@@ -528,11 +735,10 @@ exportSequenceButton.addEventListener('click', async () => {
       const targetTime = startTime + ((frameIndex * 1000) / framesPerSecond)
       await waitForCaptureTime(targetTime)
 
-      exportContext.clearRect(0, 0, exportWidth, exportHeight)
-      exportContext.drawImage(outputCanvas, 0, 0, exportWidth, exportHeight)
+      drawProcessedFrame(exportContext, exportWidth, exportHeight)
 
       const blob = await canvasToBlob(exportCanvas)
-      const fileName = `${sequenceName}_f${String(frameIndex + 1).padStart(4, '0')}.png`
+      const fileName = createSequenceFrameFilename(exportTimestamp, frameIndex + 1)
       const fileHandle = await directoryHandle.getFileHandle(fileName, { create: true })
       const writable = await fileHandle.createWritable()
 
@@ -540,7 +746,6 @@ exportSequenceButton.addEventListener('click', async () => {
       await writable.close()
     }
 
-    sequenceExportId += 1
     setStatus(`PNG sequence saved: ${frameTotal} frames.`, 'success')
   } catch (error) {
     if (error?.name === 'AbortError') {
@@ -550,7 +755,8 @@ exportSequenceButton.addEventListener('click', async () => {
 
     setStatus('PNG sequence export failed.', 'error')
   } finally {
-    exportSequenceButton.disabled = false
+    isSequenceExporting = false
+    updateCaptureButtons()
   }
 })
 
@@ -647,4 +853,5 @@ async function startCamera() {
 syncControlValues()
 updateFreezeButton()
 updateFullscreenButton()
+updateCaptureButtons()
 startCamera()
