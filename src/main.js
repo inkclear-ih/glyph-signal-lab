@@ -6,10 +6,40 @@ const settings = {
   brightness: 0,
   contrast: 1.15,
   threshold: 128,
+  ditherMode: 'threshold',
   invert: false,
   backgroundColor: '#060a08',
   foregroundColor: '#24d676',
   exportSize: '1920x1080',
+}
+
+const DITHER_MAPS = {
+  'bayer-2x2': [
+    [64, 191],
+    [128, 0],
+  ],
+  'bayer-4x4': [
+    [16, 144, 48, 175],
+    [207, 80, 239, 112],
+    [32, 159, 0, 128],
+    [223, 96, 191, 64],
+  ],
+  'bayer-8x8': [
+    [4, 132, 36, 164, 12, 139, 44, 172],
+    [195, 68, 227, 100, 203, 76, 235, 107],
+    [51, 179, 20, 148, 60, 187, 28, 155],
+    [243, 115, 212, 84, 251, 124, 219, 92],
+    [8, 136, 40, 167, 0, 128, 32, 159],
+    [199, 71, 231, 103, 191, 63, 223, 96],
+    [56, 184, 24, 151, 48, 175, 16, 144],
+    [247, 120, 215, 88, 239, 111, 207, 80],
+  ],
+  horizontal: [
+    [142, 142, 142, 170, 199, 227, 227, 227, 227, 199, 170, 170],
+    [113, 113, 85, 85, 56, 28, 28, 28, 28, 56, 85, 113],
+    [227, 227, 227, 199, 170, 170, 142, 142, 142, 170, 199, 227],
+    [28, 28, 28, 56, 85, 113, 113, 113, 85, 85, 56, 28],
+  ],
 }
 
 app.innerHTML = `
@@ -74,6 +104,17 @@ app.innerHTML = `
             value="${settings.threshold}"
           />
           <output id="threshold-value">${settings.threshold}</output>
+        </label>
+
+        <label class="control">
+          <span>Dither Mode</span>
+          <select id="dither-mode">
+            <option value="threshold" selected>Threshold</option>
+            <option value="bayer-2x2">Bayer 2x2</option>
+            <option value="bayer-4x4">Bayer 4x4</option>
+            <option value="bayer-8x8">Bayer 8x8</option>
+            <option value="horizontal">Horizontal</option>
+          </select>
         </label>
 
         <label class="control control-toggle">
@@ -201,14 +242,21 @@ function applyBitmapEffect(width, height) {
   const { data } = frame
   const backgroundColor = hexToRgb(settings.backgroundColor)
   const foregroundColor = hexToRgb(settings.foregroundColor)
+  const thresholdMap = DITHER_MAPS[settings.ditherMode]
 
   for (let i = 0; i < data.length; i += 4) {
+    const pixelIndex = i / 4
+    const x = pixelIndex % width
+    const y = Math.floor(pixelIndex / width)
     const luminance = (0.299 * data[i]) + (0.587 * data[i + 1]) + (0.114 * data[i + 2])
     const adjusted = ((luminance - 128) * settings.contrast) + 128 + settings.brightness
     const clipped = Math.max(0, Math.min(255, adjusted))
+    const mapThreshold = thresholdMap
+      ? thresholdMap[y % thresholdMap.length][x % thresholdMap[0].length] - 128 + settings.threshold
+      : settings.threshold
     const isForeground = settings.invert
-      ? clipped < settings.threshold
-      : clipped >= settings.threshold
+      ? clipped < mapThreshold
+      : clipped >= mapThreshold
     const color = isForeground ? foregroundColor : backgroundColor
 
     data[i] = color[0]
@@ -250,6 +298,10 @@ document.querySelector('#background-color').addEventListener('input', (event) =>
 
 document.querySelector('#foreground-color').addEventListener('input', (event) => {
   settings.foregroundColor = event.target.value
+})
+
+document.querySelector('#dither-mode').addEventListener('input', (event) => {
+  settings.ditherMode = event.target.value
 })
 
 document.querySelector('#export-scale').addEventListener('input', (event) => {
