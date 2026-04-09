@@ -1,6 +1,7 @@
 import './style.css'
 
 const app = document.querySelector('#app')
+const LIVE_BITMAP_WIDTH_MAX = 640
 const DEFAULT_SETTINGS = {
   pixelWidth: 96,
   brightness: 0,
@@ -61,11 +62,11 @@ app.innerHTML = `
             id="pixel-width"
             type="range"
             min="48"
-            max="160"
+            max="${LIVE_BITMAP_WIDTH_MAX}"
             step="4"
             value="${settings.pixelWidth}"
           />
-          <output id="pixel-width-value">${settings.pixelWidth}px</output>
+          <output id="pixel-width-value">${formatBitmapWidth(settings.pixelWidth)}</output>
         </label>
 
         <label class="control">
@@ -271,6 +272,10 @@ function applyBitmapEffect(width, height) {
   sourceContext.putImageData(frame, 0, 0)
 }
 
+function formatBitmapWidth(value) {
+  return `${value}px wide`
+}
+
 function bindControl(id, formatter = (value) => value) {
   const input = document.querySelector(`#${id}`)
   const output = document.querySelector(`#${id}-value`)
@@ -286,7 +291,7 @@ function bindControl(id, formatter = (value) => value) {
   })
 }
 
-bindControl('pixel-width', (value) => `${value}px`)
+bindControl('pixel-width', formatBitmapWidth)
 bindControl('brightness')
 bindControl('contrast', (value) => value.toFixed(2))
 bindControl('threshold')
@@ -336,8 +341,8 @@ function syncControlValues() {
   const exportScaleInput = document.querySelector('#export-scale')
 
   pixelWidthInput.value = String(settings.pixelWidth)
-  pixelWidthValue.value = `${settings.pixelWidth}px`
-  pixelWidthValue.textContent = `${settings.pixelWidth}px`
+  pixelWidthValue.value = formatBitmapWidth(settings.pixelWidth)
+  pixelWidthValue.textContent = formatBitmapWidth(settings.pixelWidth)
 
   brightnessInput.value = String(settings.brightness)
   brightnessValue.value = String(settings.brightness)
