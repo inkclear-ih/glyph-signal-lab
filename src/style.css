@@ -50,6 +50,11 @@ select {
   backdrop-filter: blur(24px);
 }
 
+.output-grid {
+  display: grid;
+  gap: 16px;
+}
+
 .panel-header {
   display: flex;
   align-items: flex-start;
@@ -99,11 +104,18 @@ h1 {
 .preview-frame {
   position: relative;
   overflow: hidden;
-  aspect-ratio: 16 / 10;
   border-radius: 18px;
   background:
     linear-gradient(180deg, rgba(29, 32, 45, 0.96), rgba(11, 13, 19, 0.96));
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.preview-frame-main {
+  aspect-ratio: 16 / 10;
+}
+
+.preview-frame-debug {
+  aspect-ratio: 16 / 10;
 }
 
 .preview-frame::after {
@@ -115,12 +127,30 @@ h1 {
   pointer-events: none;
 }
 
+.pixel-output,
 .camera-preview {
   width: 100%;
   height: 100%;
   display: block;
   object-fit: cover;
   background: #05060a;
+}
+
+.pixel-output {
+  image-rendering: pixelated;
+}
+
+.debug-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.debug-label {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(232, 237, 255, 0.5);
 }
 
 @media (max-width: 720px) {
