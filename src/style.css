@@ -27,6 +27,11 @@ select {
   font: inherit;
 }
 
+button {
+  border: 0;
+  cursor: pointer;
+}
+
 #app {
   min-height: 100vh;
 }
@@ -154,6 +159,31 @@ h1 {
   height: 18px;
 }
 
+.control-actions {
+  gap: 10px;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.button-row button {
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 10px;
+  color: #f5f7fb;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.button-row button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
 .preview-frame {
   position: relative;
   overflow: hidden;
@@ -164,7 +194,7 @@ h1 {
 }
 
 .preview-frame-main {
-  aspect-ratio: 16 / 10;
+  width: 100%;
 }
 
 .preview-frame-debug {
@@ -190,7 +220,7 @@ h1 {
 }
 
 .pixel-output {
-  object-fit: fill;
+  height: auto;
   image-rendering: crisp-edges;
   image-rendering: pixelated;
 }

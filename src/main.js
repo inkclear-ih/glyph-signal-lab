@@ -9,6 +9,7 @@ const settings = {
   invert: false,
   backgroundColor: '#060a08',
   foregroundColor: '#24d676',
+  exportSize: '1920x1080',
 }
 
 app.innerHTML = `
@@ -89,6 +90,30 @@ app.innerHTML = `
           <span>Foreground</span>
           <input id="foreground-color" type="color" value="${settings.foregroundColor}" />
         </label>
+
+        <div class="control control-actions">
+          <span>Actions</span>
+          <div class="button-row">
+            <button id="freeze-toggle" type="button">Freeze</button>
+            <button id="export-png" type="button">Export PNG</button>
+          </div>
+        </div>
+
+        <label class="control">
+          <span>Export Size</span>
+          <select id="export-scale">
+            <option value="2048x1152">2048 x 1152</option>
+            <option value="1920x1080" selected>1920 x 1080</option>
+            <option value="1600x900">1600 x 900</option>
+            <option value="1280x720">1280 x 720</option>
+            <option value="1024x576">1024 x 576</option>
+            <option value="960x540">960 x 540</option>
+            <option value="640x360">640 x 360</option>
+            <option value="320x180">320 x 180</option>
+            <option value="160x90">160 x 90</option>
+            <option value="96x54">96 x 54</option>
+          </select>
+        </label>
       </section>
 
       <div class="output-grid">
@@ -126,6 +151,7 @@ const sourceCanvas = document.createElement('canvas')
 const sourceContext = sourceCanvas.getContext('2d')
 
 let frameId = null
+let isFrozen = false
 
 outputContext.imageSmoothingEnabled = false
 sourceContext.imageSmoothingEnabled = false
@@ -143,6 +169,31 @@ function hexToRgb(hex) {
     Number.parseInt(value.slice(2, 4), 16),
     Number.parseInt(value.slice(4, 6), 16),
   ]
+}
+
+function getSourceRegion(width, height) {
+  const targetAspectRatio = 16 / 9
+  const sourceAspectRatio = width / height
+
+  if (sourceAspectRatio >= targetAspectRatio) {
+    return {
+      x: 0,
+      y: 0,
+      width,
+      height,
+      aspectRatio: sourceAspectRatio,
+    }
+  }
+
+  const croppedHeight = width / targetAspectRatio
+
+  return {
+    x: 0,
+    y: (height - croppedHeight) / 2,
+    width,
+    height: croppedHeight,
+    aspectRatio: targetAspectRatio,
+  }
 }
 
 function applyBitmapEffect(width, height) {
@@ -201,6 +252,40 @@ document.querySelector('#foreground-color').addEventListener('input', (event) =>
   settings.foregroundColor = event.target.value
 })
 
+document.querySelector('#export-scale').addEventListener('input', (event) => {
+  settings.exportSize = event.target.value
+})
+
+const freezeToggleButton = document.querySelector('#freeze-toggle')
+const exportPngButton = document.querySelector('#export-png')
+
+freezeToggleButton.addEventListener('click', () => {
+  isFrozen = !isFrozen
+  freezeToggleButton.textContent = isFrozen ? 'Unfreeze' : 'Freeze'
+})
+
+exportPngButton.addEventListener('click', () => {
+  if (!outputCanvas.width || !outputCanvas.height) {
+    return
+  }
+
+  const exportCanvas = document.createElement('canvas')
+  const exportContext = exportCanvas.getContext('2d')
+  const [exportWidth, exportHeight] = settings.exportSize
+    .split('x')
+    .map((value) => Number(value))
+
+  exportCanvas.width = exportWidth
+  exportCanvas.height = exportHeight
+  exportContext.imageSmoothingEnabled = false
+  exportContext.drawImage(outputCanvas, 0, 0, exportWidth, exportHeight)
+
+  const link = document.createElement('a')
+  link.href = exportCanvas.toDataURL('image/png')
+  link.download = 'glyph-signal-lab-export.png'
+  link.click()
+})
+
 function renderFrame() {
   if (videoEl.readyState < 2) {
     frameId = requestAnimationFrame(renderFrame)
@@ -215,8 +300,11 @@ function renderFrame() {
     return
   }
 
+  const sourceRegion = getSourceRegion(videoWidth, videoHeight)
+  outputCanvas.style.aspectRatio = `${sourceRegion.width} / ${sourceRegion.height}`
+
   const sourceWidth = settings.pixelWidth
-  const sourceHeight = Math.max(1, Math.round((videoHeight / videoWidth) * sourceWidth))
+  const sourceHeight = Math.max(1, Math.round((sourceRegion.height / sourceRegion.width) * sourceWidth))
 
   if (sourceCanvas.width !== sourceWidth || sourceCanvas.height !== sourceHeight) {
     sourceCanvas.width = sourceWidth
@@ -228,10 +316,22 @@ function renderFrame() {
     outputCanvas.height = sourceHeight
   }
 
-  sourceContext.drawImage(videoEl, 0, 0, sourceWidth, sourceHeight)
-  applyBitmapEffect(sourceWidth, sourceHeight)
-  outputContext.clearRect(0, 0, outputCanvas.width, outputCanvas.height)
-  outputContext.drawImage(sourceCanvas, 0, 0)
+  if (!isFrozen) {
+    sourceContext.drawImage(
+      videoEl,
+      sourceRegion.x,
+      sourceRegion.y,
+      sourceRegion.width,
+      sourceRegion.height,
+      0,
+      0,
+      sourceWidth,
+      sourceHeight,
+    )
+    applyBitmapEffect(sourceWidth, sourceHeight)
+    outputContext.clearRect(0, 0, outputCanvas.width, outputCanvas.height)
+    outputContext.drawImage(sourceCanvas, 0, 0)
+  }
 
   frameId = requestAnimationFrame(renderFrame)
 }
