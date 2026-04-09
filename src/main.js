@@ -12,6 +12,8 @@ const DEFAULT_SETTINGS = {
   backgroundColor: '#060a08',
   foregroundColor: '#24d676',
   exportSize: '1920x1080',
+  sequenceDuration: '1',
+  sequenceFps: '12',
 }
 const settings = { ...DEFAULT_SETTINGS }
 
@@ -140,6 +142,7 @@ app.innerHTML = `
             <button id="freeze-toggle" type="button">Freeze Frame</button>
             <button id="reset-controls" type="button" class="button-secondary">Reset</button>
             <button id="export-png" type="button">Export PNG</button>
+            <button id="export-sequence" type="button">Export PNG Seq</button>
           </div>
         </div>
 
@@ -159,15 +162,38 @@ app.innerHTML = `
           </select>
           <small class="control-note">Only affects the downloaded PNG, not the live preview.</small>
         </label>
+
+        <label class="control">
+          <span>Seq Duration</span>
+          <select id="sequence-duration">
+            <option value="1" selected>1s</option>
+            <option value="10">10s</option>
+          </select>
+        </label>
+
+        <label class="control">
+          <span>Seq FPS</span>
+          <select id="sequence-fps">
+            <option value="12" selected>12</option>
+            <option value="24">24</option>
+          </select>
+        </label>
       </section>
 
       <div class="output-grid">
-        <div class="preview-frame preview-frame-main">
+        <div class="preview-frame preview-frame-main" id="main-preview-frame">
           <canvas
             id="pixel-output"
             class="pixel-output"
             aria-label="Pixelated camera output"
           ></canvas>
+          <button
+            id="fullscreen-toggle"
+            class="preview-overlay-button"
+            type="button"
+            aria-label="Enter fullscreen"
+            title="Toggle fullscreen"
+          >Fullscreen</button>
         </div>
 
         <div class="debug-panel">
@@ -191,12 +217,14 @@ const statusEl = document.querySelector('#camera-status')
 const videoEl = document.querySelector('#camera-preview')
 const outputCanvas = document.querySelector('#pixel-output')
 const outputContext = outputCanvas.getContext('2d')
+const mainPreviewFrame = document.querySelector('#main-preview-frame')
 
 const sourceCanvas = document.createElement('canvas')
 const sourceContext = sourceCanvas.getContext('2d')
 
 let frameId = null
 let isFrozen = false
+let sequenceExportId = 1
 
 outputContext.imageSmoothingEnabled = false
 sourceContext.imageSmoothingEnabled = false
@@ -316,9 +344,19 @@ document.querySelector('#export-scale').addEventListener('input', (event) => {
   settings.exportSize = event.target.value
 })
 
+document.querySelector('#sequence-duration').addEventListener('input', (event) => {
+  settings.sequenceDuration = event.target.value
+})
+
+document.querySelector('#sequence-fps').addEventListener('input', (event) => {
+  settings.sequenceFps = event.target.value
+})
+
 const freezeToggleButton = document.querySelector('#freeze-toggle')
 const resetControlsButton = document.querySelector('#reset-controls')
 const exportPngButton = document.querySelector('#export-png')
+const exportSequenceButton = document.querySelector('#export-sequence')
+const fullscreenToggleButton = document.querySelector('#fullscreen-toggle')
 
 function updateFreezeButton() {
   freezeToggleButton.textContent = isFrozen ? 'Resume Live' : 'Freeze Frame'
@@ -339,6 +377,8 @@ function syncControlValues() {
   const backgroundColorInput = document.querySelector('#background-color')
   const foregroundColorInput = document.querySelector('#foreground-color')
   const exportScaleInput = document.querySelector('#export-scale')
+  const sequenceDurationInput = document.querySelector('#sequence-duration')
+  const sequenceFpsInput = document.querySelector('#sequence-fps')
 
   pixelWidthInput.value = String(settings.pixelWidth)
   pixelWidthValue.value = formatBitmapWidth(settings.pixelWidth)
@@ -361,6 +401,46 @@ function syncControlValues() {
   backgroundColorInput.value = settings.backgroundColor
   foregroundColorInput.value = settings.foregroundColor
   exportScaleInput.value = settings.exportSize
+  sequenceDurationInput.value = settings.sequenceDuration
+  sequenceFpsInput.value = settings.sequenceFps
+}
+
+function getExportDimensions() {
+  return settings.exportSize
+    .split('x')
+    .map((value) => Number(value))
+}
+
+function canvasToBlob(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob)
+        return
+      }
+
+      reject(new Error('PNG encoding failed.'))
+    }, 'image/png')
+  })
+}
+
+function waitForNextAnimationFrame() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve())
+  })
+}
+
+async function waitForCaptureTime(targetTime) {
+  while (performance.now() < targetTime) {
+    await waitForNextAnimationFrame()
+  }
+}
+
+function updateFullscreenButton() {
+  const isFullscreen = document.fullscreenElement === mainPreviewFrame
+  fullscreenToggleButton.textContent = isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'
+  fullscreenToggleButton.setAttribute('aria-label', isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen')
+  fullscreenToggleButton.setAttribute('aria-pressed', String(isFullscreen))
 }
 
 freezeToggleButton.addEventListener('click', () => {
@@ -382,9 +462,7 @@ exportPngButton.addEventListener('click', () => {
 
   const exportCanvas = document.createElement('canvas')
   const exportContext = exportCanvas.getContext('2d')
-  const [exportWidth, exportHeight] = settings.exportSize
-    .split('x')
-    .map((value) => Number(value))
+  const [exportWidth, exportHeight] = getExportDimensions()
 
   exportCanvas.width = exportWidth
   exportCanvas.height = exportHeight
@@ -395,6 +473,85 @@ exportPngButton.addEventListener('click', () => {
   link.href = exportCanvas.toDataURL('image/png')
   link.download = 'glyph-signal-lab-export.png'
   link.click()
+})
+
+fullscreenToggleButton.addEventListener('click', async () => {
+  if (!document.fullscreenEnabled || !mainPreviewFrame.requestFullscreen) {
+    setStatus('Fullscreen is unavailable in this browser.', 'error')
+    return
+  }
+
+  try {
+    if (document.fullscreenElement === mainPreviewFrame) {
+      await document.exitFullscreen()
+      return
+    }
+
+    await mainPreviewFrame.requestFullscreen()
+  } catch {
+    setStatus('Fullscreen toggle failed.', 'error')
+  }
+})
+
+document.addEventListener('fullscreenchange', updateFullscreenButton)
+
+exportSequenceButton.addEventListener('click', async () => {
+  if (!outputCanvas.width || !outputCanvas.height) {
+    setStatus('Nothing to export yet.', 'error')
+    return
+  }
+
+  if (!window.showDirectoryPicker) {
+    setStatus('PNG sequence export needs the File System Access API in Chrome desktop.', 'error')
+    return
+  }
+
+  try {
+    const directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' })
+    const durationSeconds = Number(settings.sequenceDuration)
+    const framesPerSecond = Number(settings.sequenceFps)
+    const frameTotal = durationSeconds * framesPerSecond
+    const sequenceName = `gsl_seq${String(sequenceExportId).padStart(3, '0')}`
+    const exportCanvas = document.createElement('canvas')
+    const exportContext = exportCanvas.getContext('2d')
+    const [exportWidth, exportHeight] = getExportDimensions()
+
+    exportCanvas.width = exportWidth
+    exportCanvas.height = exportHeight
+    exportContext.imageSmoothingEnabled = false
+    exportSequenceButton.disabled = true
+    setStatus(`Exporting ${frameTotal} PNG frames...`, 'muted')
+
+    const startTime = performance.now()
+
+    for (let frameIndex = 0; frameIndex < frameTotal; frameIndex += 1) {
+      const targetTime = startTime + ((frameIndex * 1000) / framesPerSecond)
+      await waitForCaptureTime(targetTime)
+
+      exportContext.clearRect(0, 0, exportWidth, exportHeight)
+      exportContext.drawImage(outputCanvas, 0, 0, exportWidth, exportHeight)
+
+      const blob = await canvasToBlob(exportCanvas)
+      const fileName = `${sequenceName}_f${String(frameIndex + 1).padStart(4, '0')}.png`
+      const fileHandle = await directoryHandle.getFileHandle(fileName, { create: true })
+      const writable = await fileHandle.createWritable()
+
+      await writable.write(blob)
+      await writable.close()
+    }
+
+    sequenceExportId += 1
+    setStatus(`PNG sequence saved: ${frameTotal} frames.`, 'success')
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      setStatus('PNG sequence export canceled.', 'muted')
+      return
+    }
+
+    setStatus('PNG sequence export failed.', 'error')
+  } finally {
+    exportSequenceButton.disabled = false
+  }
 })
 
 function renderFrame() {
@@ -489,4 +646,5 @@ async function startCamera() {
 
 syncControlValues()
 updateFreezeButton()
+updateFullscreenButton()
 startCamera()

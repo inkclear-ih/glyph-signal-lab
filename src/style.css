@@ -210,6 +210,19 @@ h1 {
   width: 100%;
 }
 
+.preview-frame-main:fullscreen {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #05060a;
+}
+
+.preview-frame-main:fullscreen .pixel-output {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
 .preview-frame-debug {
   aspect-ratio: 16 / 9;
   max-width: 320px;
@@ -236,6 +249,24 @@ h1 {
   height: auto;
   image-rendering: crisp-edges;
   image-rendering: pixelated;
+}
+
+.preview-overlay-button {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 1;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: #f5f7fb;
+  background: rgba(5, 6, 10, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(14px);
+}
+
+.preview-overlay-button:hover {
+  background: rgba(18, 21, 29, 0.9);
 }
 
 .camera-preview {
