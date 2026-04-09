@@ -23,7 +23,8 @@ body {
 button,
 input,
 textarea,
-select {
+select,
+output {
   font: inherit;
 }
 
@@ -179,9 +180,21 @@ h1 {
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 
+.button-row .button-secondary {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
 .button-row button:hover {
   background: rgba(255, 255, 255, 0.14);
   border-color: rgba(255, 255, 255, 0.18);
+}
+
+.control-note {
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(232, 237, 255, 0.52);
 }
 
 .preview-frame {

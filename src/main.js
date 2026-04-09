@@ -1,7 +1,7 @@
 import './style.css'
 
 const app = document.querySelector('#app')
-const settings = {
+const DEFAULT_SETTINGS = {
   pixelWidth: 96,
   brightness: 0,
   contrast: 1.15,
@@ -12,6 +12,7 @@ const settings = {
   foregroundColor: '#24d676',
   exportSize: '1920x1080',
 }
+const settings = { ...DEFAULT_SETTINGS }
 
 const DITHER_MAPS = {
   'bayer-2x2': [
@@ -55,7 +56,7 @@ app.innerHTML = `
 
       <section class="controls-panel" aria-label="Render controls">
         <label class="control">
-          <span>Resolution</span>
+          <span>Bitmap Width</span>
           <input
             id="pixel-width"
             type="range"
@@ -135,13 +136,14 @@ app.innerHTML = `
         <div class="control control-actions">
           <span>Actions</span>
           <div class="button-row">
-            <button id="freeze-toggle" type="button">Freeze</button>
+            <button id="freeze-toggle" type="button">Freeze Frame</button>
+            <button id="reset-controls" type="button" class="button-secondary">Reset</button>
             <button id="export-png" type="button">Export PNG</button>
           </div>
         </div>
 
         <label class="control">
-          <span>Export Size</span>
+          <span>PNG Export Size</span>
           <select id="export-scale">
             <option value="2048x1152">2048 x 1152</option>
             <option value="1920x1080" selected>1920 x 1080</option>
@@ -154,6 +156,7 @@ app.innerHTML = `
             <option value="160x90">160 x 90</option>
             <option value="96x54">96 x 54</option>
           </select>
+          <small class="control-note">Only affects the downloaded PNG, not the live preview.</small>
         </label>
       </section>
 
@@ -309,11 +312,62 @@ document.querySelector('#export-scale').addEventListener('input', (event) => {
 })
 
 const freezeToggleButton = document.querySelector('#freeze-toggle')
+const resetControlsButton = document.querySelector('#reset-controls')
 const exportPngButton = document.querySelector('#export-png')
+
+function updateFreezeButton() {
+  freezeToggleButton.textContent = isFrozen ? 'Resume Live' : 'Freeze Frame'
+  freezeToggleButton.setAttribute('aria-pressed', String(isFrozen))
+}
+
+function syncControlValues() {
+  const pixelWidthInput = document.querySelector('#pixel-width')
+  const pixelWidthValue = document.querySelector('#pixel-width-value')
+  const brightnessInput = document.querySelector('#brightness')
+  const brightnessValue = document.querySelector('#brightness-value')
+  const contrastInput = document.querySelector('#contrast')
+  const contrastValue = document.querySelector('#contrast-value')
+  const thresholdInput = document.querySelector('#threshold')
+  const thresholdValue = document.querySelector('#threshold-value')
+  const ditherModeInput = document.querySelector('#dither-mode')
+  const invertInput = document.querySelector('#invert')
+  const backgroundColorInput = document.querySelector('#background-color')
+  const foregroundColorInput = document.querySelector('#foreground-color')
+  const exportScaleInput = document.querySelector('#export-scale')
+
+  pixelWidthInput.value = String(settings.pixelWidth)
+  pixelWidthValue.value = `${settings.pixelWidth}px`
+  pixelWidthValue.textContent = `${settings.pixelWidth}px`
+
+  brightnessInput.value = String(settings.brightness)
+  brightnessValue.value = String(settings.brightness)
+  brightnessValue.textContent = String(settings.brightness)
+
+  contrastInput.value = String(settings.contrast)
+  contrastValue.value = settings.contrast.toFixed(2)
+  contrastValue.textContent = settings.contrast.toFixed(2)
+
+  thresholdInput.value = String(settings.threshold)
+  thresholdValue.value = String(settings.threshold)
+  thresholdValue.textContent = String(settings.threshold)
+
+  ditherModeInput.value = settings.ditherMode
+  invertInput.checked = settings.invert
+  backgroundColorInput.value = settings.backgroundColor
+  foregroundColorInput.value = settings.foregroundColor
+  exportScaleInput.value = settings.exportSize
+}
 
 freezeToggleButton.addEventListener('click', () => {
   isFrozen = !isFrozen
-  freezeToggleButton.textContent = isFrozen ? 'Unfreeze' : 'Freeze'
+  updateFreezeButton()
+})
+
+resetControlsButton.addEventListener('click', () => {
+  Object.assign(settings, DEFAULT_SETTINGS)
+  isFrozen = false
+  syncControlValues()
+  updateFreezeButton()
 })
 
 exportPngButton.addEventListener('click', () => {
@@ -428,4 +482,6 @@ async function startCamera() {
   }
 }
 
+syncControlValues()
+updateFreezeButton()
 startCamera()
