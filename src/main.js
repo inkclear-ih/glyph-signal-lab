@@ -114,6 +114,7 @@ app.innerHTML = `
           <span>Dither Mode</span>
           <select id="dither-mode">
             <option value="threshold" selected>Threshold</option>
+            <option value="blue-noise">Blue Noise</option>
             <option value="bayer-2x2">Bayer 2x2</option>
             <option value="bayer-4x4">Bayer 4x4</option>
             <option value="bayer-8x8">Bayer 8x8</option>
@@ -227,11 +228,15 @@ const mainPreviewFrame = document.querySelector('#main-preview-frame')
 
 const sourceCanvas = document.createElement('canvas')
 const sourceContext = sourceCanvas.getContext('2d')
+const blueNoiseCanvas = document.createElement('canvas')
+const blueNoiseContext = blueNoiseCanvas.getContext('2d', { willReadFrequently: true })
 
 let frameId = null
 let isFrozen = false
 let isSequenceExporting = false
 let activeWebmCapture = null
+let blueNoiseThresholdMap = null
+let blueNoiseLoadFailed = false
 
 outputContext.imageSmoothingEnabled = false
 sourceContext.imageSmoothingEnabled = false
@@ -276,12 +281,60 @@ function getSourceRegion(width, height) {
   }
 }
 
+function getActiveThresholdMap() {
+  if (settings.ditherMode === 'blue-noise') {
+    if (!blueNoiseThresholdMap && blueNoiseLoadFailed) {
+      return null
+    }
+
+    return blueNoiseThresholdMap
+  }
+
+  return DITHER_MAPS[settings.ditherMode] ?? null
+}
+
+function loadBlueNoiseThresholdMap() {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+
+    image.addEventListener('load', () => {
+      blueNoiseCanvas.width = image.width
+      blueNoiseCanvas.height = image.height
+      blueNoiseContext.clearRect(0, 0, image.width, image.height)
+      blueNoiseContext.drawImage(image, 0, 0)
+
+      const { data } = blueNoiseContext.getImageData(0, 0, image.width, image.height)
+      const thresholdMap = []
+
+      for (let y = 0; y < image.height; y += 1) {
+        const row = []
+
+        for (let x = 0; x < image.width; x += 1) {
+          const index = ((y * image.width) + x) * 4
+          const grayscale = Math.round((0.299 * data[index]) + (0.587 * data[index + 1]) + (0.114 * data[index + 2]))
+          row.push(grayscale)
+        }
+
+        thresholdMap.push(row)
+      }
+
+      resolve(thresholdMap)
+    }, { once: true })
+
+    image.addEventListener('error', () => {
+      reject(new Error('Blue noise asset failed to load.'))
+    }, { once: true })
+
+    image.src = `${import.meta.env.BASE_URL}patterns/bluenoise.png`
+  })
+}
+
 function applyBitmapEffect(width, height) {
   const frame = sourceContext.getImageData(0, 0, width, height)
   const { data } = frame
   const backgroundColor = hexToRgb(settings.backgroundColor)
   const foregroundColor = hexToRgb(settings.foregroundColor)
-  const thresholdMap = DITHER_MAPS[settings.ditherMode]
+  const thresholdMap = getActiveThresholdMap()
 
   for (let i = 0; i < data.length; i += 4) {
     const pixelIndex = i / 4
@@ -344,6 +397,12 @@ document.querySelector('#foreground-color').addEventListener('input', (event) =>
 })
 
 document.querySelector('#dither-mode').addEventListener('input', (event) => {
+  if (event.target.value === 'blue-noise' && !blueNoiseThresholdMap) {
+    event.target.value = settings.ditherMode
+    setStatus('Blue Noise asset unavailable.', 'error')
+    return
+  }
+
   settings.ditherMode = event.target.value
 })
 
@@ -854,4 +913,13 @@ syncControlValues()
 updateFreezeButton()
 updateFullscreenButton()
 updateCaptureButtons()
+
+try {
+  blueNoiseThresholdMap = await loadBlueNoiseThresholdMap()
+} catch (error) {
+  blueNoiseLoadFailed = true
+  console.error(error)
+  setStatus('Blue Noise asset failed to load.', 'error')
+}
+
 startCamera()
