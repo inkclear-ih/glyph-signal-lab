@@ -140,6 +140,29 @@ const DEFAULT_SETTINGS = {
   sequenceFps: '12',
 }
 const settings = { ...DEFAULT_SETTINGS }
+const CONTROL_CONFIGS = {
+  'pixel-width': {
+    settingKey: 'pixelWidth',
+    formatter: formatBitmapWidth,
+  },
+  'ascii-columns': {
+    settingKey: 'asciiColumns',
+    formatter: formatGlyphSize,
+    fromControlValue: glyphSizeToAsciiColumns,
+    toControlValue: asciiColumnsToGlyphSize,
+  },
+  'ascii-letter-spacing': {
+    settingKey: 'asciiLetterSpacing',
+  },
+  'ascii-line-spacing': {
+    settingKey: 'asciiLineSpacing',
+  },
+  brightness: {},
+  contrast: {
+    formatter: (value) => value.toFixed(2),
+  },
+  threshold: {},
+}
 
 const DITHER_MAPS = {
   'bayer-2x2': [
@@ -262,9 +285,9 @@ app.innerHTML = `
           <span>ASCII Font</span>
           <select id="ascii-font">
             <option value="monospace" selected>Monospace</option>
-            <option value="studio" disabled>Studio Font</option>
+            <option value="studio" disabled>Serrucho 100</option>
           </select>
-          <small class="control-note" id="ascii-font-note">Studio Font loading...</small>
+          <small class="control-note" id="ascii-font-note">Serrucho 100 loading...</small>
         </label>
 
         <label class="control control-toggle" id="ascii-all-caps-control" hidden>
@@ -643,17 +666,17 @@ function updateAsciiFontUi() {
 
   asciiFontInput.value = settings.asciiFontMode
   asciiFontNote.textContent = isLoaded
-    ? 'Studio Font ready.'
+    ? 'Serrucho 100 ready.'
     : isFailed
-      ? 'Studio Font failed to load. Using monospace.'
-      : 'Studio Font loading...'
+      ? 'Serrucho 100 failed to load. Using monospace.'
+      : 'Serrucho 100 loading...'
 }
 
 async function loadAsciiCustomFont() {
   if (!('FontFace' in window) || !document.fonts) {
     asciiCustomFontStatus = 'failed'
     updateAsciiFontUi()
-    setStatus('Studio Font could not load. Using monospace.', 'error')
+    setStatus('Serrucho 100 could not load. Using monospace.', 'error')
     return
   }
 
@@ -667,7 +690,7 @@ async function loadAsciiCustomFont() {
     asciiCustomFontStatus = 'failed'
     console.error(error)
     updateAsciiFontUi()
-    setStatus('Studio Font could not load. Using monospace.', 'error')
+    setStatus('Serrucho 100 could not load. Using monospace.', 'error')
   }
 }
 
@@ -949,30 +972,147 @@ function formatBitmapWidth(value) {
   return `${value}px wide`
 }
 
-function formatGlyphSize(value) {
-  return String(value)
+function asciiColumnsToGlyphSize(value) {
+  return (ASCII_GLYPH_SIZE_MAX + ASCII_GLYPH_SIZE_MIN) - value
 }
 
-function bindControl(id, formatter = (value) => value) {
+function glyphSizeToAsciiColumns(value) {
+  return asciiColumnsToGlyphSize(value)
+}
+
+function formatGlyphSize(value) {
+  return String(asciiColumnsToGlyphSize(value))
+}
+
+function formatControlValue(id, value) {
+  const formatter = CONTROL_CONFIGS[id]?.formatter ?? ((nextValue) => nextValue)
+  return formatter(value)
+}
+
+function getControlStateValue(id, inputValue) {
+  const fromControlValue = CONTROL_CONFIGS[id]?.fromControlValue ?? ((value) => value)
+  return fromControlValue(inputValue)
+}
+
+function getDisplayControlValue(id, settingValue) {
+  const toControlValue = CONTROL_CONFIGS[id]?.toControlValue ?? ((value) => value)
+  return toControlValue(settingValue)
+}
+
+function getControlSettingKey(id) {
+  return CONTROL_CONFIGS[id]?.settingKey ?? id
+}
+
+function clampToRangeStep(value, min, max, step, base = min) {
+  const clampedValue = Math.min(max, Math.max(min, value))
+
+  if (!Number.isFinite(step) || step <= 0) {
+    return clampedValue
+  }
+
+  const precision = Math.max(
+    0,
+    ...[step, min, max, base]
+      .filter((candidate) => Number.isFinite(candidate))
+      .map((candidate) => {
+        const decimals = String(candidate).split('.')[1]
+        return decimals ? decimals.length : 0
+      }),
+  )
+  const stepCount = Math.round((clampedValue - base) / step)
+
+  return Number((base + (stepCount * step)).toFixed(precision))
+}
+
+function beginInlineOutputEdit(id, input, output) {
+  if (!output || output.dataset.editing === 'true') {
+    return
+  }
+
+  const min = Number(input.min)
+  const max = Number(input.max)
+  const step = input.step === 'any' ? Number.NaN : Number(input.step || '1')
+  const editor = document.createElement('input')
+  let didFinalize = false
+
+  editor.type = 'number'
+  editor.inputMode = 'decimal'
+  editor.className = 'control-value-editor'
+  editor.min = input.min
+  editor.max = input.max
+  editor.step = input.step || '1'
+  editor.value = input.value
+  editor.setAttribute('aria-label', `Edit ${id} value`)
+
+  output.dataset.editing = 'true'
+  output.hidden = true
+  output.insertAdjacentElement('afterend', editor)
+  editor.focus()
+  editor.select()
+
+  const finish = (mode) => {
+    if (didFinalize) {
+      return
+    }
+
+    didFinalize = true
+
+    if (mode === 'commit') {
+      const parsedValue = Number(editor.value)
+
+      if (Number.isFinite(parsedValue)) {
+        const nextValue = clampToRangeStep(parsedValue, min, max, step)
+        input.value = String(nextValue)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+    }
+
+    editor.remove()
+    output.hidden = false
+    delete output.dataset.editing
+  }
+
+  editor.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      finish('commit')
+      return
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      finish('cancel')
+    }
+  })
+
+  editor.addEventListener('blur', () => {
+    finish('commit')
+  })
+}
+
+function bindControl(id) {
   const input = document.querySelector(`#${id}`)
   const output = document.querySelector(`#${id}-value`)
 
   input.addEventListener('input', () => {
-    const value = input.type === 'range' ? Number(input.value) : input.checked
-    const settingKey = ({
-      'pixel-width': 'pixelWidth',
-      'ascii-columns': 'asciiColumns',
-      'ascii-letter-spacing': 'asciiLetterSpacing',
-      'ascii-line-spacing': 'asciiLineSpacing',
-    })[id] ?? id
+    const rawValue = input.type === 'range' ? Number(input.value) : input.checked
+    const value = input.type === 'range' ? getControlStateValue(id, rawValue) : rawValue
+    const settingKey = getControlSettingKey(id)
 
     settings[settingKey] = value
 
     if (output) {
-      output.value = formatter(value)
-      output.textContent = formatter(value)
+      const formattedValue = formatControlValue(id, value)
+      output.value = formattedValue
+      output.textContent = formattedValue
     }
   })
+
+  if (input.type === 'range' && output) {
+    output.addEventListener('dblclick', () => {
+      beginInlineOutputEdit(id, input, output)
+    })
+  }
 }
 
 function isFileSource() {
@@ -1182,7 +1322,7 @@ function syncControlValues() {
   pixelWidthValue.value = formatBitmapWidth(settings.pixelWidth)
   pixelWidthValue.textContent = formatBitmapWidth(settings.pixelWidth)
 
-  asciiColumnsInput.value = String(settings.asciiColumns)
+  asciiColumnsInput.value = String(getDisplayControlValue('ascii-columns', settings.asciiColumns))
   asciiColumnsValue.value = formatGlyphSize(settings.asciiColumns)
   asciiColumnsValue.textContent = formatGlyphSize(settings.asciiColumns)
   asciiCharsetInput.value = settings.asciiCharacterSet
@@ -1443,12 +1583,12 @@ async function switchSource(nextSourceType) {
   await promptForFile()
 }
 
-bindControl('pixel-width', formatBitmapWidth)
-bindControl('ascii-columns', formatGlyphSize)
+bindControl('pixel-width')
+bindControl('ascii-columns')
 bindControl('ascii-letter-spacing')
 bindControl('ascii-line-spacing')
 bindControl('brightness')
-bindControl('contrast', (value) => value.toFixed(2))
+bindControl('contrast')
 bindControl('threshold')
 
 document.querySelector('#ascii-columns').addEventListener('input', () => {
@@ -1464,7 +1604,7 @@ asciiFontInput.addEventListener('input', (event) => {
   if (event.target.value === ASCII_FONT_MODES.studio && asciiCustomFontStatus !== 'loaded') {
     settings.asciiFontMode = ASCII_FONT_MODES.monospace
     asciiFontInput.value = ASCII_FONT_MODES.monospace
-    setStatus('Studio Font unavailable. Using monospace.', 'error')
+    setStatus('Serrucho 100 unavailable. Using monospace.', 'error')
     return
   }
 
