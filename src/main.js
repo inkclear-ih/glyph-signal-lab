@@ -25,6 +25,7 @@ const ASCII_BUILTIN_CUSTOM_FONTS = {
 const ASCII_GLYPH_SIZE_MIN = 4
 const ASCII_GLYPH_SIZE_MAX = 240
 const ASCII_MIN_ADVANCE_RATIO = 0.5
+const ASCII_HORIZONTAL_MIN_ADVANCE_RATIO = 0.08
 const ASCII_FONT_UPLOAD_ACCEPT = '.otf,.ttf,.woff,.woff2'
 const ASCII_FONT_UPLOAD_EXTENSIONS = new Set(['otf', 'ttf', 'woff', 'woff2'])
 const RENDER_MODES = {
@@ -684,9 +685,9 @@ function getActiveAsciiFontFamily() {
   return settings.asciiFontFamily
 }
 
-function clampAsciiAdvance(advance, cellSize) {
+function clampAsciiAdvance(advance, cellSize, minAdvanceRatio = ASCII_MIN_ADVANCE_RATIO) {
   return Math.max(
-    Math.max(1, cellSize * ASCII_MIN_ADVANCE_RATIO),
+    Math.max(1, cellSize * minAdvanceRatio),
     advance,
   )
 }
@@ -715,7 +716,11 @@ function getAsciiRenderLayoutMetrics(targetWidth, targetHeight) {
   const cellWidth = targetWidth / requestedColumns
   const glyphScale = cellWidth / referenceCellWidth
   const cellHeight = referenceCellHeight * glyphScale
-  const horizontalAdvance = clampAsciiAdvance(cellWidth + (letterSpacing * glyphScale), cellWidth)
+  const horizontalAdvance = clampAsciiAdvance(
+    cellWidth + (letterSpacing * glyphScale),
+    cellWidth,
+    ASCII_HORIZONTAL_MIN_ADVANCE_RATIO,
+  )
   const verticalAdvance = clampAsciiAdvance(cellHeight + (lineSpacing * glyphScale), cellHeight)
   const columns = getFittedAsciiTrackCount(targetWidth, cellWidth, horizontalAdvance)
   const rows = getFittedAsciiTrackCount(targetHeight, cellHeight, verticalAdvance)
