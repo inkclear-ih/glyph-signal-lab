@@ -2,13 +2,24 @@ import './style.css'
 
 const app = document.querySelector('#app')
 const LIVE_BITMAP_WIDTH_MAX = 640
+const DEFAULT_ASCII_CHARSET = '@%#*+=-:. '
+const ASCII_CELL_WIDTH = 10
+const ASCII_CELL_HEIGHT = 16
+const RENDER_MODES = {
+  bitmap: 'bitmap',
+  ascii: 'ascii',
+}
 const SOURCE_TYPES = {
   camera: 'camera',
   image: 'image',
   video: 'video',
 }
 const DEFAULT_SETTINGS = {
+  renderMode: RENDER_MODES.bitmap,
   pixelWidth: 96,
+  asciiColumns: 96,
+  asciiCharacterSet: DEFAULT_ASCII_CHARSET,
+  asciiAllCaps: false,
   brightness: 0,
   contrast: 1.15,
   threshold: 128,
@@ -72,6 +83,14 @@ app.innerHTML = `
           </select>
         </label>
 
+        <label class="control">
+          <span>Render Mode</span>
+          <select id="render-mode">
+            <option value="bitmap" selected>Bitmap</option>
+            <option value="ascii">ASCII</option>
+          </select>
+        </label>
+
         <div class="control control-actions">
           <span>Source File</span>
           <div class="button-row">
@@ -80,7 +99,7 @@ app.innerHTML = `
           <small class="control-note" id="source-file-note">Live camera is active.</small>
         </div>
 
-        <label class="control">
+        <label class="control" id="pixel-width-control">
           <span>Bitmap Width</span>
           <input
             id="pixel-width"
@@ -91,6 +110,36 @@ app.innerHTML = `
             value="${settings.pixelWidth}"
           />
           <output id="pixel-width-value">${formatBitmapWidth(settings.pixelWidth)}</output>
+        </label>
+
+        <label class="control" id="ascii-columns-control" hidden>
+          <span>ASCII Columns</span>
+          <input
+            id="ascii-columns"
+            type="range"
+            min="48"
+            max="240"
+            step="2"
+            value="${settings.asciiColumns}"
+          />
+          <output id="ascii-columns-value">${formatAsciiColumns(settings.asciiColumns)}</output>
+        </label>
+
+        <label class="control" id="ascii-charset-control" hidden>
+          <span>Character Set</span>
+          <input
+            id="ascii-charset"
+            type="text"
+            value="${settings.asciiCharacterSet.replace(/"/g, '&quot;')}"
+            spellcheck="false"
+            autocomplete="off"
+          />
+          <small class="control-note">Characters are used left to right: dark to light.</small>
+        </label>
+
+        <label class="control control-toggle" id="ascii-all-caps-control" hidden>
+          <span>All Caps</span>
+          <input id="ascii-all-caps" type="checkbox" />
         </label>
 
         <label class="control">
@@ -119,7 +168,7 @@ app.innerHTML = `
           <output id="contrast-value">${settings.contrast.toFixed(2)}</output>
         </label>
 
-        <label class="control">
+        <label class="control" id="threshold-control">
           <span>Threshold</span>
           <input
             id="threshold"
@@ -132,7 +181,7 @@ app.innerHTML = `
           <output id="threshold-value">${settings.threshold}</output>
         </label>
 
-        <label class="control">
+        <label class="control" id="dither-mode-control">
           <span>Dither Mode</span>
           <select id="dither-mode">
             <option value="threshold" selected>Threshold</option>
@@ -214,7 +263,7 @@ app.innerHTML = `
           <canvas
             id="pixel-output"
             class="pixel-output"
-            aria-label="Pixelated source output"
+            aria-label="Processed source output"
           ></canvas>
           <button
             id="fullscreen-toggle"
@@ -245,6 +294,7 @@ app.innerHTML = `
 
 const statusEl = document.querySelector('#camera-status')
 const sourceTypeInput = document.querySelector('#source-type')
+const renderModeInput = document.querySelector('#render-mode')
 const chooseFileButton = document.querySelector('#choose-file')
 const sourceFileNote = document.querySelector('#source-file-note')
 const debugLabel = document.querySelector('#debug-label')
@@ -254,13 +304,20 @@ const outputCanvas = document.querySelector('#pixel-output')
 const outputContext = outputCanvas.getContext('2d')
 const mainPreviewFrame = document.querySelector('#main-preview-frame')
 const fileInput = document.createElement('input')
+const pixelWidthControl = document.querySelector('#pixel-width-control')
+const thresholdControl = document.querySelector('#threshold-control')
+const ditherModeControl = document.querySelector('#dither-mode-control')
+const asciiColumnsControl = document.querySelector('#ascii-columns-control')
+const asciiCharsetInput = document.querySelector('#ascii-charset')
+const asciiCharsetControl = document.querySelector('#ascii-charset-control')
+const asciiAllCapsControl = document.querySelector('#ascii-all-caps-control')
 
 fileInput.type = 'file'
 fileInput.hidden = true
 app.append(fileInput)
 
 const sourceCanvas = document.createElement('canvas')
-const sourceContext = sourceCanvas.getContext('2d')
+const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true })
 const blueNoiseCanvas = document.createElement('canvas')
 const blueNoiseContext = blueNoiseCanvas.getContext('2d', { willReadFrequently: true })
 
@@ -319,6 +376,10 @@ function getSourceRegion(width, height) {
   }
 }
 
+function isAsciiMode() {
+  return settings.renderMode === RENDER_MODES.ascii
+}
+
 function getActiveThresholdMap() {
   if (settings.ditherMode === 'blue-noise') {
     if (!blueNoiseThresholdMap && blueNoiseLoadFailed) {
@@ -367,6 +428,17 @@ function loadBlueNoiseThresholdMap() {
   })
 }
 
+function clampByte(value) {
+  return Math.max(0, Math.min(255, value))
+}
+
+function getAdjustedLuminance(red, green, blue) {
+  const luminance = (0.299 * red) + (0.587 * green) + (0.114 * blue)
+  const adjusted = ((luminance - 128) * settings.contrast) + 128 + settings.brightness
+
+  return clampByte(adjusted)
+}
+
 function applyBitmapEffect(width, height) {
   const frame = sourceContext.getImageData(0, 0, width, height)
   const { data } = frame
@@ -378,9 +450,7 @@ function applyBitmapEffect(width, height) {
     const pixelIndex = i / 4
     const x = pixelIndex % width
     const y = Math.floor(pixelIndex / width)
-    const luminance = (0.299 * data[i]) + (0.587 * data[i + 1]) + (0.114 * data[i + 2])
-    const adjusted = ((luminance - 128) * settings.contrast) + 128 + settings.brightness
-    const clipped = Math.max(0, Math.min(255, adjusted))
+    const clipped = getAdjustedLuminance(data[i], data[i + 1], data[i + 2])
     const mapThreshold = thresholdMap
       ? thresholdMap[y % thresholdMap.length][x % thresholdMap[0].length] - 128 + settings.threshold
       : settings.threshold
@@ -398,8 +468,67 @@ function applyBitmapEffect(width, height) {
   sourceContext.putImageData(frame, 0, 0)
 }
 
+function getAsciiCharacterSet() {
+  const charset = settings.asciiCharacterSet || DEFAULT_ASCII_CHARSET
+  const normalized = settings.asciiAllCaps ? charset.toUpperCase() : charset
+
+  return normalized.length ? normalized : DEFAULT_ASCII_CHARSET
+}
+
+function getAsciiRows(sourceRegion, columns) {
+  const sourceAspectRatio = sourceRegion.width / sourceRegion.height
+  const rows = columns / sourceAspectRatio * (ASCII_CELL_WIDTH / ASCII_CELL_HEIGHT)
+
+  return Math.max(1, Math.round(rows))
+}
+
+function renderAsciiFrame(columns, rows) {
+  const frame = sourceContext.getImageData(0, 0, columns, rows)
+  const { data } = frame
+  const characterSet = getAsciiCharacterSet()
+  const thresholdBias = settings.threshold - 128
+
+  outputContext.save()
+  outputContext.fillStyle = settings.backgroundColor
+  outputContext.fillRect(0, 0, outputCanvas.width, outputCanvas.height)
+  outputContext.fillStyle = settings.foregroundColor
+  outputContext.font = `${ASCII_CELL_HEIGHT}px monospace`
+  outputContext.textAlign = 'center'
+  outputContext.textBaseline = 'top'
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < columns; x += 1) {
+      const index = ((y * columns) + x) * 4
+      const clipped = getAdjustedLuminance(data[index], data[index + 1], data[index + 2])
+      const biased = clampByte(clipped + thresholdBias)
+      const normalized = settings.invert ? 1 - (biased / 255) : biased / 255
+      const characterIndex = Math.min(
+        characterSet.length - 1,
+        Math.floor(normalized * (characterSet.length - 1)),
+      )
+      const character = characterSet[characterIndex]
+
+      if (character === ' ') {
+        continue
+      }
+
+      outputContext.fillText(
+        character,
+        (x * ASCII_CELL_WIDTH) + (ASCII_CELL_WIDTH / 2),
+        y * ASCII_CELL_HEIGHT,
+      )
+    }
+  }
+
+  outputContext.restore()
+}
+
 function formatBitmapWidth(value) {
   return `${value}px wide`
+}
+
+function formatAsciiColumns(value) {
+  return `${value} cols`
 }
 
 function bindControl(id, formatter = (value) => value) {
@@ -408,7 +537,12 @@ function bindControl(id, formatter = (value) => value) {
 
   input.addEventListener('input', () => {
     const value = input.type === 'range' ? Number(input.value) : input.checked
-    settings[id === 'pixel-width' ? 'pixelWidth' : id] = value
+    const settingKey = ({
+      'pixel-width': 'pixelWidth',
+      'ascii-columns': 'asciiColumns',
+    })[id] ?? id
+
+    settings[settingKey] = value
 
     if (output) {
       output.value = formatter(value)
@@ -543,6 +677,16 @@ function updateSourceControls() {
   updateSourceFileNote()
 }
 
+function updateRenderModeControls() {
+  const showAsciiControls = isAsciiMode()
+
+  pixelWidthControl.hidden = showAsciiControls
+  ditherModeControl.hidden = showAsciiControls
+  asciiColumnsControl.hidden = !showAsciiControls
+  asciiCharsetControl.hidden = !showAsciiControls
+  asciiAllCapsControl.hidden = !showAsciiControls
+}
+
 function updateFreezeButton() {
   freezeToggleButton.textContent = isFrozen ? 'Resume Live' : 'Freeze Frame'
   freezeToggleButton.setAttribute('aria-pressed', String(isFrozen))
@@ -580,6 +724,9 @@ function updateCaptureButtons() {
 function syncControlValues() {
   const pixelWidthInput = document.querySelector('#pixel-width')
   const pixelWidthValue = document.querySelector('#pixel-width-value')
+  const asciiColumnsInput = document.querySelector('#ascii-columns')
+  const asciiColumnsValue = document.querySelector('#ascii-columns-value')
+  const asciiAllCapsInput = document.querySelector('#ascii-all-caps')
   const brightnessInput = document.querySelector('#brightness')
   const brightnessValue = document.querySelector('#brightness-value')
   const contrastInput = document.querySelector('#contrast')
@@ -594,9 +741,17 @@ function syncControlValues() {
   const sequenceDurationInput = document.querySelector('#sequence-duration')
   const sequenceFpsInput = document.querySelector('#sequence-fps')
 
+  renderModeInput.value = settings.renderMode
+
   pixelWidthInput.value = String(settings.pixelWidth)
   pixelWidthValue.value = formatBitmapWidth(settings.pixelWidth)
   pixelWidthValue.textContent = formatBitmapWidth(settings.pixelWidth)
+
+  asciiColumnsInput.value = String(settings.asciiColumns)
+  asciiColumnsValue.value = formatAsciiColumns(settings.asciiColumns)
+  asciiColumnsValue.textContent = formatAsciiColumns(settings.asciiColumns)
+  asciiCharsetInput.value = settings.asciiCharacterSet
+  asciiAllCapsInput.checked = settings.asciiAllCaps
 
   brightnessInput.value = String(settings.brightness)
   brightnessValue.value = String(settings.brightness)
@@ -618,6 +773,7 @@ function syncControlValues() {
   sequenceDurationInput.value = settings.sequenceDuration
   sequenceFpsInput.value = settings.sequenceFps
   sourceTypeInput.value = getDisplayedSourceType()
+  updateRenderModeControls()
   updateSourceControls()
   updateCaptureButtons()
 }
@@ -734,6 +890,17 @@ function drawSourceFrame(sourceWidth, sourceHeight, sourceRegion) {
   )
 }
 
+function resizeCanvas(canvas, context, width, height) {
+  if (canvas.width === width && canvas.height === height) {
+    return false
+  }
+
+  canvas.width = width
+  canvas.height = height
+  context.imageSmoothingEnabled = false
+  return true
+}
+
 function clearLoadedFile() {
   currentFileName = ''
   revokeCurrentFileUrl()
@@ -822,9 +989,15 @@ async function switchSource(nextSourceType) {
 }
 
 bindControl('pixel-width', formatBitmapWidth)
+bindControl('ascii-columns', formatAsciiColumns)
 bindControl('brightness')
 bindControl('contrast', (value) => value.toFixed(2))
 bindControl('threshold')
+
+renderModeInput.addEventListener('input', (event) => {
+  settings.renderMode = event.target.value
+  updateRenderModeControls()
+})
 
 document.querySelector('#invert').addEventListener('input', (event) => {
   settings.invert = event.target.checked
@@ -846,6 +1019,14 @@ document.querySelector('#dither-mode').addEventListener('input', (event) => {
   }
 
   settings.ditherMode = event.target.value
+})
+
+asciiCharsetInput.addEventListener('input', (event) => {
+  settings.asciiCharacterSet = event.target.value || DEFAULT_ASCII_CHARSET
+})
+
+document.querySelector('#ascii-all-caps').addEventListener('input', (event) => {
+  settings.asciiAllCaps = event.target.checked
 })
 
 document.querySelector('#export-scale').addEventListener('input', (event) => {
@@ -1173,25 +1354,34 @@ function renderFrame() {
   const sourceRegion = getSourceRegion(mediaWidth, mediaHeight)
   outputCanvas.style.aspectRatio = `${sourceRegion.width} / ${sourceRegion.height}`
 
-  const sourceWidth = settings.pixelWidth
-  const sourceHeight = Math.max(1, Math.round((sourceRegion.height / sourceRegion.width) * sourceWidth))
-
-  if (sourceCanvas.width !== sourceWidth || sourceCanvas.height !== sourceHeight) {
-    sourceCanvas.width = sourceWidth
-    sourceCanvas.height = sourceHeight
-  }
-
-  if (outputCanvas.width !== sourceWidth || outputCanvas.height !== sourceHeight) {
-    outputCanvas.width = sourceWidth
-    outputCanvas.height = sourceHeight
-    updateCaptureButtons()
-  }
-
   if (!isFrozen || isStaticImageSource()) {
-    drawSourceFrame(sourceWidth, sourceHeight, sourceRegion)
-    applyBitmapEffect(sourceWidth, sourceHeight)
-    outputContext.clearRect(0, 0, outputCanvas.width, outputCanvas.height)
-    outputContext.drawImage(sourceCanvas, 0, 0)
+    if (isAsciiMode()) {
+      const columns = settings.asciiColumns
+      const rows = getAsciiRows(sourceRegion, columns)
+      const outputWidth = columns * ASCII_CELL_WIDTH
+      const outputHeight = rows * ASCII_CELL_HEIGHT
+
+      resizeCanvas(sourceCanvas, sourceContext, columns, rows)
+      if (resizeCanvas(outputCanvas, outputContext, outputWidth, outputHeight)) {
+        updateCaptureButtons()
+      }
+
+      drawSourceFrame(columns, rows, sourceRegion)
+      renderAsciiFrame(columns, rows)
+    } else {
+      const sourceWidth = settings.pixelWidth
+      const sourceHeight = Math.max(1, Math.round((sourceRegion.height / sourceRegion.width) * sourceWidth))
+
+      resizeCanvas(sourceCanvas, sourceContext, sourceWidth, sourceHeight)
+      if (resizeCanvas(outputCanvas, outputContext, sourceWidth, sourceHeight)) {
+        updateCaptureButtons()
+      }
+
+      drawSourceFrame(sourceWidth, sourceHeight, sourceRegion)
+      applyBitmapEffect(sourceWidth, sourceHeight)
+      outputContext.clearRect(0, 0, outputCanvas.width, outputCanvas.height)
+      outputContext.drawImage(sourceCanvas, 0, 0)
+    }
   }
 
   frameId = requestAnimationFrame(renderFrame)
@@ -1239,6 +1429,7 @@ async function startCamera() {
 }
 
 syncControlValues()
+updateRenderModeControls()
 updateSourceControls()
 updateFreezeButton()
 updateFullscreenButton()

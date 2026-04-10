@@ -139,6 +139,25 @@ h1 {
   width: 100%;
 }
 
+.control input[type='text'],
+.control select {
+  min-height: 42px;
+}
+
+.control input[type='text'] {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(7, 9, 14, 0.9);
+  color: #f5f7fb;
+}
+
+.control input[type='text']:focus {
+  outline: 2px solid rgba(36, 214, 118, 0.35);
+  outline-offset: 1px;
+}
+
 .control input[type='color'] {
   width: 100%;
   min-height: 42px;
