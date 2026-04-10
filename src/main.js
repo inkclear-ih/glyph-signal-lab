@@ -8,8 +8,9 @@ const ASCII_FONT_MODES = {
   monospace: 'monospace',
   studio: 'studio',
   zanco: 'zanco',
+  uploaded: 'uploaded',
 }
-const ASCII_CUSTOM_FONTS = {
+const ASCII_BUILTIN_CUSTOM_FONTS = {
   [ASCII_FONT_MODES.studio]: {
     label: 'Serrucho 100',
     family: 'GlyphSignalAsciiSerrucho',
@@ -24,6 +25,8 @@ const ASCII_CUSTOM_FONTS = {
 const ASCII_GLYPH_SIZE_MIN = 4
 const ASCII_GLYPH_SIZE_MAX = 240
 const ASCII_MIN_ADVANCE_RATIO = 0.5
+const ASCII_FONT_UPLOAD_ACCEPT = '.otf,.ttf,.woff,.woff2'
+const ASCII_FONT_UPLOAD_EXTENSIONS = new Set(['otf', 'ttf', 'woff', 'woff2'])
 const RENDER_MODES = {
   bitmap: 'bitmap',
   ascii: 'ascii',
@@ -330,6 +333,14 @@ app.innerHTML = `
                   <small class="control-note" id="ascii-font-note">Custom ASCII fonts loading...</small>
                 </label>
 
+                <div class="control control-actions" id="ascii-upload-font-control" hidden>
+                  <span>Custom Font</span>
+                  <div class="button-row">
+                    <button id="choose-font" type="button" class="button-secondary">Choose Font</button>
+                  </div>
+                  <small class="control-note" id="ascii-upload-font-note">No custom font loaded.</small>
+                </div>
+
                 <label class="control control-toggle" id="ascii-all-caps-control" hidden>
                   <span>All Caps</span>
                   <input id="ascii-all-caps" type="checkbox" />
@@ -536,6 +547,7 @@ const outputCanvas = document.querySelector('#pixel-output')
 const outputContext = outputCanvas.getContext('2d')
 const mainPreviewFrame = document.querySelector('#main-preview-frame')
 const fileInput = document.createElement('input')
+const fontUploadInput = document.createElement('input')
 const asciiPresetControl = document.querySelector('#ascii-preset-control')
 const pixelWidthControl = document.querySelector('#pixel-width-control')
 const thresholdControl = document.querySelector('#threshold-control')
@@ -546,13 +558,20 @@ const asciiCharsetControl = document.querySelector('#ascii-charset-control')
 const asciiFontInput = document.querySelector('#ascii-font')
 const asciiFontControl = document.querySelector('#ascii-font-control')
 const asciiFontNote = document.querySelector('#ascii-font-note')
+const asciiUploadFontControl = document.querySelector('#ascii-upload-font-control')
+const chooseFontButton = document.querySelector('#choose-font')
+const asciiUploadFontNote = document.querySelector('#ascii-upload-font-note')
 const asciiAllCapsControl = document.querySelector('#ascii-all-caps-control')
 const asciiLetterSpacingControl = document.querySelector('#ascii-letter-spacing-control')
 const asciiLineSpacingControl = document.querySelector('#ascii-line-spacing-control')
 
 fileInput.type = 'file'
 fileInput.hidden = true
+fontUploadInput.type = 'file'
+fontUploadInput.hidden = true
+fontUploadInput.accept = ASCII_FONT_UPLOAD_ACCEPT
 app.append(fileInput)
+app.append(fontUploadInput)
 
 const sourceCanvas = document.createElement('canvas')
 const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true })
@@ -573,8 +592,11 @@ let currentFileUrl = null
 let currentFileName = ''
 let cameraStream = null
 const asciiCustomFontStatuses = Object.fromEntries(
-  Object.keys(ASCII_CUSTOM_FONTS).map((mode) => [mode, 'loading']),
+  Object.keys(ASCII_BUILTIN_CUSTOM_FONTS).map((mode) => [mode, 'loading']),
 )
+let asciiUploadedFont = null
+let asciiUploadedFontGeneration = 0
+let asciiUploadFontNoteMessage = 'No custom font loaded.'
 let hasAsciiSourceFrame = false
 let previewResizeObserver = null
 const asciiPreviewSize = {
@@ -644,8 +666,16 @@ function getAsciiStyleSettings() {
   }
 }
 
+function getAsciiCustomFontDefinition(mode) {
+  if (mode === ASCII_FONT_MODES.uploaded) {
+    return asciiUploadedFont
+  }
+
+  return ASCII_BUILTIN_CUSTOM_FONTS[mode] ?? null
+}
+
 function getActiveAsciiFontFamily() {
-  const customFont = ASCII_CUSTOM_FONTS[settings.asciiFontMode]
+  const customFont = getAsciiCustomFontDefinition(settings.asciiFontMode)
 
   if (customFont && asciiCustomFontStatuses[settings.asciiFontMode] === 'loaded') {
     return `"${customFont.family}", ${settings.asciiFontFamily}`
@@ -713,8 +743,13 @@ function getAsciiCustomFontStatus(mode) {
   return asciiCustomFontStatuses[mode] ?? 'failed'
 }
 
+function updateAsciiUploadFontNote(message = 'No custom font loaded.') {
+  asciiUploadFontNoteMessage = message
+  asciiUploadFontNote.textContent = message
+}
+
 function getAsciiFontNoteText() {
-  const selectedCustomFont = ASCII_CUSTOM_FONTS[settings.asciiFontMode]
+  const selectedCustomFont = getAsciiCustomFontDefinition(settings.asciiFontMode)
 
   if (selectedCustomFont) {
     const selectedStatus = getAsciiCustomFontStatus(settings.asciiFontMode)
@@ -743,7 +778,7 @@ function getAsciiFontNoteText() {
 }
 
 function updateAsciiFontUi() {
-  for (const mode of Object.keys(ASCII_CUSTOM_FONTS)) {
+  for (const mode of Object.keys(ASCII_BUILTIN_CUSTOM_FONTS)) {
     const option = asciiFontInput.querySelector(`option[value="${mode}"]`)
 
     if (option) {
@@ -751,7 +786,28 @@ function updateAsciiFontUi() {
     }
   }
 
-  if (ASCII_CUSTOM_FONTS[settings.asciiFontMode] && getAsciiCustomFontStatus(settings.asciiFontMode) !== 'loaded') {
+  const uploadedOption = asciiFontInput.querySelector(`option[value="${ASCII_FONT_MODES.uploaded}"]`)
+
+  if (asciiUploadedFont && getAsciiCustomFontStatus(ASCII_FONT_MODES.uploaded) === 'loaded') {
+    if (!uploadedOption) {
+      const option = document.createElement('option')
+      option.value = ASCII_FONT_MODES.uploaded
+      option.textContent = 'Uploaded Font'
+      asciiFontInput.append(option)
+    }
+  } else if (uploadedOption) {
+    uploadedOption.remove()
+  }
+
+  if (uploadedOption || asciiFontInput.querySelector(`option[value="${ASCII_FONT_MODES.uploaded}"]`)) {
+    const option = asciiFontInput.querySelector(`option[value="${ASCII_FONT_MODES.uploaded}"]`)
+
+    if (option) {
+      option.disabled = getAsciiCustomFontStatus(ASCII_FONT_MODES.uploaded) !== 'loaded'
+    }
+  }
+
+  if (getAsciiCustomFontDefinition(settings.asciiFontMode) && getAsciiCustomFontStatus(settings.asciiFontMode) !== 'loaded') {
     settings.asciiFontMode = ASCII_FONT_MODES.monospace
   }
 
@@ -761,7 +817,7 @@ function updateAsciiFontUi() {
 
 async function loadAsciiCustomFonts() {
   if (!('FontFace' in window) || !document.fonts) {
-    for (const mode of Object.keys(ASCII_CUSTOM_FONTS)) {
+    for (const mode of Object.keys(ASCII_BUILTIN_CUSTOM_FONTS)) {
       asciiCustomFontStatuses[mode] = 'failed'
     }
 
@@ -770,7 +826,7 @@ async function loadAsciiCustomFonts() {
     return
   }
 
-  const customFontEntries = Object.entries(ASCII_CUSTOM_FONTS)
+  const customFontEntries = Object.entries(ASCII_BUILTIN_CUSTOM_FONTS)
   const results = await Promise.allSettled(
     customFontEntries.map(async ([mode, customFont]) => {
       const fontFace = new FontFace(customFont.family, `url(${customFont.url})`)
@@ -799,6 +855,93 @@ async function loadAsciiCustomFonts() {
 
   if (failedCount === customFontEntries.length) {
     setStatus('Custom ASCII fonts could not load. Using monospace.', 'error')
+  }
+}
+
+function getAsciiUploadedFontName() {
+  return asciiUploadedFont?.fileName ?? ''
+}
+
+function getFontFileExtension(fileName) {
+  return fileName.split('.').pop()?.toLowerCase() ?? ''
+}
+
+function isAcceptedFontFile(file) {
+  return ASCII_FONT_UPLOAD_EXTENSIONS.has(getFontFileExtension(file.name))
+}
+
+function cleanupAsciiUploadedFont() {
+  if (!asciiUploadedFont) {
+    asciiCustomFontStatuses[ASCII_FONT_MODES.uploaded] = 'failed'
+    return
+  }
+
+  if (asciiUploadedFont.fontFace && document.fonts?.delete) {
+    document.fonts.delete(asciiUploadedFont.fontFace)
+  }
+
+  if (asciiUploadedFont.url) {
+    URL.revokeObjectURL(asciiUploadedFont.url)
+  }
+
+  asciiUploadedFont = null
+  asciiCustomFontStatuses[ASCII_FONT_MODES.uploaded] = 'failed'
+}
+
+async function loadUploadedAsciiFont(file) {
+  if (!('FontFace' in window) || !document.fonts) {
+    updateAsciiUploadFontNote('Font uploads unsupported here.')
+    setStatus('Custom font upload unavailable in this browser.', 'error')
+    return
+  }
+
+  if (!isAcceptedFontFile(file)) {
+    updateAsciiUploadFontNote('Unsupported font file.')
+    setStatus('Font upload failed.', 'error')
+    return
+  }
+
+  const nextUrl = URL.createObjectURL(file)
+  const nextFamily = `GlyphSignalAsciiUploaded${++asciiUploadedFontGeneration}`
+  const fontFace = new FontFace(nextFamily, `url(${nextUrl})`)
+
+  asciiCustomFontStatuses[ASCII_FONT_MODES.uploaded] = 'loading'
+  updateAsciiUploadFontNote('Loading font...')
+  updateAsciiFontUi()
+
+  try {
+    const loadedFontFace = await fontFace.load()
+    document.fonts.add(loadedFontFace)
+
+    const previousSelectedMode = settings.asciiFontMode
+
+    cleanupAsciiUploadedFont()
+    asciiUploadedFont = {
+      label: 'Uploaded Font',
+      family: nextFamily,
+      fileName: file.name,
+      url: nextUrl,
+      fontFace: loadedFontFace,
+    }
+    asciiCustomFontStatuses[ASCII_FONT_MODES.uploaded] = 'loaded'
+    settings.asciiFontMode = ASCII_FONT_MODES.uploaded
+    asciiFontInput.value = ASCII_FONT_MODES.uploaded
+    updateAsciiUploadFontNote(file.name)
+    updateAsciiFontUi()
+    markAsciiPresetCustom()
+
+    if (previousSelectedMode !== ASCII_FONT_MODES.uploaded) {
+      setStatus('Uploaded font ready.', 'success')
+    } else {
+      setStatus('Uploaded font replaced.', 'success')
+    }
+  } catch (error) {
+    URL.revokeObjectURL(nextUrl)
+    asciiCustomFontStatuses[ASCII_FONT_MODES.uploaded] = asciiUploadedFont ? 'loaded' : 'failed'
+    updateAsciiUploadFontNote(asciiUploadedFont ? 'Font load failed. Keeping previous upload.' : 'Font load failed.')
+    updateAsciiFontUi()
+    console.error(error)
+    setStatus('Font upload failed.', 'error')
   }
 }
 
@@ -1391,6 +1534,7 @@ function updateRenderModeControls() {
   asciiColumnsControl.hidden = !showAsciiControls
   asciiCharsetControl.hidden = !showAsciiControls
   asciiFontControl.hidden = !showAsciiControls
+  asciiUploadFontControl.hidden = !showAsciiControls
   asciiAllCapsControl.hidden = !showAsciiControls
   asciiLetterSpacingControl.hidden = !showAsciiControls
   asciiLineSpacingControl.hidden = !showAsciiControls
@@ -1467,6 +1611,7 @@ function syncControlValues() {
   asciiColumnsValue.textContent = formatGlyphSize(settings.asciiColumns)
   asciiCharsetInput.value = settings.asciiCharacterSet
   asciiFontInput.value = settings.asciiFontMode
+  chooseFontButton.disabled = false
   asciiAllCapsInput.checked = settings.asciiAllCaps
   asciiLetterSpacingInput.value = String(settings.asciiLetterSpacing)
   asciiLetterSpacingValue.value = String(settings.asciiLetterSpacing)
@@ -1496,6 +1641,7 @@ function syncControlValues() {
   sequenceFpsInput.value = settings.sequenceFps
   sourceTypeInput.value = getDisplayedSourceType()
   updateAsciiFontUi()
+  updateAsciiUploadFontNote(asciiUploadFontNoteMessage)
   updateRenderModeControls()
   updateSourceControls()
   updateCaptureButtons()
@@ -1746,7 +1892,7 @@ asciiPresetInput.addEventListener('input', (event) => {
 })
 
 asciiFontInput.addEventListener('input', (event) => {
-  const selectedCustomFont = ASCII_CUSTOM_FONTS[event.target.value]
+  const selectedCustomFont = getAsciiCustomFontDefinition(event.target.value)
 
   if (selectedCustomFont && getAsciiCustomFontStatus(event.target.value) !== 'loaded') {
     settings.asciiFontMode = ASCII_FONT_MODES.monospace
@@ -1757,6 +1903,21 @@ asciiFontInput.addEventListener('input', (event) => {
 
   settings.asciiFontMode = event.target.value
   markAsciiPresetCustom()
+})
+
+chooseFontButton.addEventListener('click', () => {
+  fontUploadInput.value = ''
+  fontUploadInput.click()
+})
+
+fontUploadInput.addEventListener('change', async (event) => {
+  const [file] = event.target.files ?? []
+
+  if (!file) {
+    return
+  }
+
+  await loadUploadedAsciiFont(file)
 })
 
 renderModeInput.addEventListener('input', (event) => {
@@ -1890,6 +2051,10 @@ resetControlsButton.addEventListener('click', () => {
   Object.assign(settings, DEFAULT_SETTINGS)
   resetFreezeState()
   syncControlValues()
+})
+
+window.addEventListener('beforeunload', () => {
+  cleanupAsciiUploadedFont()
 })
 
 exportPngButton.addEventListener('click', () => {
