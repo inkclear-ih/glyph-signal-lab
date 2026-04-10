@@ -1316,34 +1316,67 @@ function applyInlineEditorValue(input, editorValue) {
   return true
 }
 
+function updateInlineOutputText(id, input, output) {
+  const rawValue = input.type === 'range' ? Number(input.value) : input.checked
+  const value = input.type === 'range' ? getControlStateValue(id, rawValue) : rawValue
+  const formattedValue = formatControlValue(id, value)
+
+  output.value = formattedValue
+  output.textContent = formattedValue
+}
+
+function stepInlineEditorValue(input, editor, direction) {
+  const min = Number(input.min)
+  const max = Number(input.max)
+  const step = input.step === 'any' ? 1 : Number(input.step || '1')
+  const editorValue = Number(editor.value)
+  const currentValue = Number.isFinite(editorValue) ? editorValue : Number(input.value)
+  const nextValue = clampToRangeStep(currentValue + (step * direction), min, max, step)
+
+  editor.value = String(nextValue)
+  input.value = String(nextValue)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 function beginInlineOutputEdit(id, input, output) {
   if (!output || output.dataset.editing === 'true' || input.disabled) {
     return
   }
 
+  const editorFrame = document.createElement('span')
   const editor = document.createElement('input')
+  const stepper = document.createElement('span')
+  const incrementButton = document.createElement('button')
+  const decrementButton = document.createElement('button')
   let didFinalize = false
   const initialInputValue = input.value
 
-  editor.type = 'number'
+  editorFrame.className = 'control-value-editor'
+  editor.type = 'text'
   editor.inputMode = 'decimal'
-  editor.className = 'control-value-editor'
-  editor.min = input.min
-  editor.max = input.max
-  editor.step = input.step || '1'
+  editor.className = 'control-value-editor-input'
   editor.value = input.value
   editor.setAttribute('aria-label', `Edit ${id} value`)
+  stepper.className = 'control-value-editor-stepper'
+  incrementButton.type = 'button'
+  incrementButton.className = 'control-value-editor-step control-value-editor-step-up'
+  incrementButton.setAttribute('aria-label', `Increase ${id} value`)
+  decrementButton.type = 'button'
+  decrementButton.className = 'control-value-editor-step control-value-editor-step-down'
+  decrementButton.setAttribute('aria-label', `Decrease ${id} value`)
 
   const outputStyles = window.getComputedStyle(output)
-  editor.style.fontSize = outputStyles.fontSize
-  editor.style.fontWeight = outputStyles.fontWeight
-  editor.style.fontFamily = outputStyles.fontFamily
-  editor.style.lineHeight = outputStyles.lineHeight
-  editor.style.letterSpacing = outputStyles.letterSpacing
-  editor.style.textTransform = outputStyles.textTransform
+  editorFrame.style.fontSize = outputStyles.fontSize
+  editorFrame.style.fontWeight = outputStyles.fontWeight
+  editorFrame.style.fontFamily = outputStyles.fontFamily
+  editorFrame.style.lineHeight = outputStyles.lineHeight
+  editorFrame.style.letterSpacing = outputStyles.letterSpacing
+  editorFrame.style.textTransform = outputStyles.textTransform
 
   output.dataset.editing = 'true'
-  output.append(editor)
+  stepper.append(incrementButton, decrementButton)
+  editorFrame.append(editor, stepper)
+  output.append(editorFrame)
   editor.focus()
   editor.select()
 
@@ -1361,8 +1394,26 @@ function beginInlineOutputEdit(id, input, output) {
       applyInlineEditorValue(input, editor.value)
     }
 
-    editor.remove()
+    document.removeEventListener('pointerdown', handleOutsidePointerDown, true)
+    editorFrame.remove()
+    updateInlineOutputText(id, input, output)
     delete output.dataset.editing
+  }
+
+  const handleStep = (direction) => {
+    stepInlineEditorValue(input, editor, direction)
+    editor.focus()
+    editor.select()
+  }
+
+  function handleOutsidePointerDown(event) {
+    const eventPath = event.composedPath()
+
+    if (eventPath.includes(editorFrame) || eventPath.includes(output)) {
+      return
+    }
+
+    finish('commit')
   }
 
   editor.addEventListener('keydown', (event) => {
@@ -1378,15 +1429,37 @@ function beginInlineOutputEdit(id, input, output) {
     }
   })
 
+  editorFrame.addEventListener('pointerdown', (event) => {
+    event.stopPropagation()
+  })
+
+  editorFrame.addEventListener('click', (event) => {
+    event.stopPropagation()
+  })
+
+  incrementButton.addEventListener('pointerdown', (event) => {
+    event.preventDefault()
+  })
+
+  decrementButton.addEventListener('pointerdown', (event) => {
+    event.preventDefault()
+  })
+
+  incrementButton.addEventListener('click', () => {
+    handleStep(1)
+  })
+
+  decrementButton.addEventListener('click', () => {
+    handleStep(-1)
+  })
+
   const syncLiveValue = () => {
     applyInlineEditorValue(input, editor.value)
   }
 
   editor.addEventListener('input', syncLiveValue)
   editor.addEventListener('change', syncLiveValue)
-  editor.addEventListener('blur', () => {
-    finish('commit')
-  })
+  document.addEventListener('pointerdown', handleOutsidePointerDown, true)
 }
 
 function setControlDisabled(control, isDisabled) {
@@ -1418,8 +1491,11 @@ function bindControl(id) {
 
     if (output) {
       const formattedValue = formatControlValue(id, value)
-      output.value = formattedValue
-      output.textContent = formattedValue
+
+      if (output.dataset.editing !== 'true') {
+        output.value = formattedValue
+        output.textContent = formattedValue
+      }
     }
 
     updateRangeInputVisual(input)
