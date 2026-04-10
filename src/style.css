@@ -39,32 +39,39 @@ button {
 
 .shell {
   min-height: 100vh;
-  padding: clamp(12px, 1.8vw, 24px);
+  padding: 0;
 }
 
 .panel {
   width: 100%;
+  min-height: 100vh;
   display: grid;
-  gap: 18px;
-  padding: clamp(14px, 1.6vw, 24px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 24px;
+  gap: 12px;
+  padding:
+    clamp(10px, 1.1vw, 16px)
+    clamp(18px, 1.6vw, 24px)
+    clamp(18px, 1.6vw, 24px)
+    clamp(10px, 1.1vw, 16px);
+  border: 0;
+  border-radius: 0;
   background: rgba(10, 12, 18, 0.72);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  box-shadow: none;
   backdrop-filter: blur(24px);
 }
 
 .studio-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(400px, 30vw, 520px);
-  gap: clamp(16px, 1.6vw, 24px);
+  gap: clamp(14px, 1.3vw, 20px);
   align-items: start;
 }
 
 .preview-column {
   width: 100%;
   min-width: 0;
+  display: grid;
   align-self: start;
+  align-content: start;
 }
 
 .side-panel {
@@ -276,7 +283,14 @@ button {
   width: 100%;
   min-height: 0;
   display: block;
-  padding: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+}
+
+.preview-frame-main::after {
+  display: none;
 }
 
 .preview-frame-main:fullscreen {
@@ -319,6 +333,10 @@ button {
   height: auto;
   image-rendering: crisp-edges;
   image-rendering: pixelated;
+}
+
+.preview-frame-main .pixel-output {
+  border-radius: inherit;
 }
 
 .preview-overlay-button {
@@ -394,13 +412,9 @@ button {
 }
 
 @media (max-width: 720px) {
-  .shell {
-    padding: 18px;
-  }
-
   .panel {
-    padding: 18px;
-    border-radius: 20px;
+    min-height: 100vh;
+    padding: 14px;
   }
 
   .studio-layout {
@@ -418,7 +432,7 @@ button {
 
   .preview-frame-main {
     min-height: auto;
-    padding: 10px;
+    padding: 0;
   }
 
   .debug-panel {
