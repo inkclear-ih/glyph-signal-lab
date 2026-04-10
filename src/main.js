@@ -9,6 +9,9 @@ const ASCII_FONT_MODES = {
   monospace: 'monospace',
   studio: 'studio',
 }
+const ASCII_GLYPH_SIZE_MIN = 4
+const ASCII_GLYPH_SIZE_MAX = 240
+const ASCII_MIN_ADVANCE_RATIO = 0.5
 const RENDER_MODES = {
   bitmap: 'bitmap',
   ascii: 'ascii',
@@ -231,16 +234,16 @@ app.innerHTML = `
         </label>
 
         <label class="control" id="ascii-columns-control" hidden>
-          <span>ASCII Columns</span>
+          <span>Glyph Size</span>
           <input
             id="ascii-columns"
             type="range"
-            min="10"
-            max="240"
-            step="2"
+            min="${ASCII_GLYPH_SIZE_MIN}"
+            max="${ASCII_GLYPH_SIZE_MAX}"
+            step="1"
             value="${settings.asciiColumns}"
           />
-          <output id="ascii-columns-value">${formatAsciiColumns(settings.asciiColumns)}</output>
+          <output id="ascii-columns-value">${formatGlyphSize(settings.asciiColumns)}</output>
         </label>
 
         <label class="control" id="ascii-charset-control" hidden>
@@ -274,7 +277,7 @@ app.innerHTML = `
           <input
             id="ascii-letter-spacing"
             type="range"
-            min="-4"
+            min="-15"
             max="20"
             step="1"
             value="${settings.asciiLetterSpacing}"
@@ -478,6 +481,8 @@ app.append(fileInput)
 
 const sourceCanvas = document.createElement('canvas')
 const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true })
+const asciiSourceCanvas = document.createElement('canvas')
+const asciiSourceContext = asciiSourceCanvas.getContext('2d')
 const blueNoiseCanvas = document.createElement('canvas')
 const blueNoiseContext = blueNoiseCanvas.getContext('2d', { willReadFrequently: true })
 
@@ -493,7 +498,7 @@ let currentFileUrl = null
 let currentFileName = ''
 let cameraStream = null
 let asciiCustomFontStatus = 'loading'
-let lastAsciiAnalysis = null
+let hasAsciiSourceFrame = false
 let previewResizeObserver = null
 const asciiPreviewSize = {
   width: 0,
@@ -502,6 +507,7 @@ const asciiPreviewSize = {
 
 outputContext.imageSmoothingEnabled = false
 sourceContext.imageSmoothingEnabled = false
+asciiSourceContext.imageSmoothingEnabled = false
 
 function setStatus(message, tone = 'muted') {
   statusEl.textContent = message
@@ -569,10 +575,25 @@ function getActiveAsciiFontFamily() {
   return settings.asciiFontFamily
 }
 
-function getAsciiLayoutMetrics(columns, rows) {
+function clampAsciiAdvance(advance, cellSize) {
+  return Math.max(
+    Math.max(1, cellSize * ASCII_MIN_ADVANCE_RATIO),
+    advance,
+  )
+}
+
+function getFittedAsciiTrackCount(targetSize, cellSize, advance) {
+  if (targetSize <= cellSize) {
+    return 1
+  }
+
+  return Math.max(1, Math.floor((targetSize - cellSize) / advance) + 1)
+}
+
+function getAsciiRenderLayoutMetrics(targetWidth, targetHeight) {
   const {
-    cellWidth,
-    cellHeight,
+    cellWidth: referenceCellWidth,
+    cellHeight: referenceCellHeight,
     fontWeight,
     fontFamily,
     fontSizeRatio,
@@ -581,24 +602,31 @@ function getAsciiLayoutMetrics(columns, rows) {
     letterSpacing,
     lineSpacing,
   } = getAsciiStyleSettings()
-  const fontSize = Math.max(8, Math.round(cellHeight * fontSizeRatio))
-  const horizontalAdvance = cellWidth + letterSpacing
-  const verticalAdvance = cellHeight + lineSpacing
-  const outputWidth = Math.max(1, Math.round(cellWidth + (Math.max(0, columns - 1) * horizontalAdvance)))
-  const outputHeight = Math.max(1, Math.round(cellHeight + (Math.max(0, rows - 1) * verticalAdvance)))
+  const requestedColumns = Math.max(ASCII_GLYPH_SIZE_MIN, settings.asciiColumns)
+  const cellWidth = targetWidth / requestedColumns
+  const glyphScale = cellWidth / referenceCellWidth
+  const cellHeight = referenceCellHeight * glyphScale
+  const horizontalAdvance = clampAsciiAdvance(cellWidth + (letterSpacing * glyphScale), cellWidth)
+  const verticalAdvance = clampAsciiAdvance(cellHeight + (lineSpacing * glyphScale), cellHeight)
+  const columns = getFittedAsciiTrackCount(targetWidth, cellWidth, horizontalAdvance)
+  const rows = getFittedAsciiTrackCount(targetHeight, cellHeight, verticalAdvance)
+  const gridWidth = cellWidth + (Math.max(0, columns - 1) * horizontalAdvance)
+  const gridHeight = cellHeight + (Math.max(0, rows - 1) * verticalAdvance)
 
   return {
     cellWidth,
     cellHeight,
     fontWeight,
     fontFamily,
-    fontSize,
+    fontSize: Math.max(8, Math.round(cellHeight * fontSizeRatio)),
     horizontalBias,
     verticalBias,
+    columns,
+    rows,
     horizontalAdvance,
     verticalAdvance,
-    outputWidth,
-    outputHeight,
+    offsetX: (targetWidth - gridWidth) / 2,
+    offsetY: (targetHeight - gridHeight) / 2,
   }
 }
 
@@ -774,14 +802,6 @@ function getAsciiCharacterSet() {
   return normalized.length ? normalized : DEFAULT_ASCII_CHARSET
 }
 
-function getAsciiRows(sourceRegion, columns) {
-  const sourceAspectRatio = sourceRegion.width / sourceRegion.height
-  const { cellWidth, cellHeight } = getAsciiStyleSettings()
-  const rows = columns / sourceAspectRatio * (cellWidth / cellHeight)
-
-  return Math.max(1, Math.round(rows))
-}
-
 function analyzeAsciiFrame(columns, rows) {
   const frame = sourceContext.getImageData(0, 0, columns, rows)
   const { data } = frame
@@ -803,47 +823,42 @@ function analyzeAsciiFrame(columns, rows) {
   }
 }
 
-function getAsciiRenderLayoutMetrics(columns, rows, targetWidth, targetHeight) {
-  const {
-    cellWidth: referenceCellWidth,
-    cellHeight: referenceCellHeight,
-    fontFamily,
-    fontWeight,
-    fontSizeRatio,
-    horizontalBias,
-    verticalBias,
-    letterSpacing,
-    lineSpacing,
-  } = getAsciiStyleSettings()
-  const cellWidth = targetWidth / columns
-  const cellHeight = targetHeight / rows
-  const horizontalAdvance = cellWidth + (letterSpacing * (cellWidth / referenceCellWidth))
-  const verticalAdvance = cellHeight + (lineSpacing * (cellHeight / referenceCellHeight))
-  const gridWidth = cellWidth + (Math.max(0, columns - 1) * horizontalAdvance)
-  const gridHeight = cellHeight + (Math.max(0, rows - 1) * verticalAdvance)
+function analyzeAsciiSourceFrame(columns, rows) {
+  resizeCanvas(sourceCanvas, sourceContext, columns, rows)
+  sourceContext.clearRect(0, 0, columns, rows)
+  sourceContext.drawImage(asciiSourceCanvas, 0, 0, columns, rows)
 
-  return {
-    cellWidth,
-    cellHeight,
-    horizontalAdvance,
-    verticalAdvance,
-    fontFamily,
-    fontWeight,
-    fontSize: Math.max(8, Math.round(cellHeight * fontSizeRatio)),
-    horizontalBias,
-    verticalBias,
-    offsetX: (targetWidth - gridWidth) / 2,
-    offsetY: (targetHeight - gridHeight) / 2,
-  }
+  return analyzeAsciiFrame(columns, rows)
 }
 
-function renderAsciiAnalysisToContext(asciiAnalysis, context, targetWidth, targetHeight) {
-  if (!asciiAnalysis) {
+function captureAsciiSourceFrame(sourceRegion) {
+  const width = Math.max(1, Math.round(sourceRegion.width))
+  const height = Math.max(1, Math.round(sourceRegion.height))
+
+  resizeCanvas(asciiSourceCanvas, asciiSourceContext, width, height)
+  asciiSourceContext.clearRect(0, 0, width, height)
+  asciiSourceContext.drawImage(
+    getCurrentSourceElement(),
+    sourceRegion.x,
+    sourceRegion.y,
+    sourceRegion.width,
+    sourceRegion.height,
+    0,
+    0,
+    width,
+    height,
+  )
+  hasAsciiSourceFrame = true
+}
+
+function renderAsciiToContext(context, targetWidth, targetHeight) {
+  if (!hasAsciiSourceFrame) {
     context.clearRect(0, 0, targetWidth, targetHeight)
     return
   }
 
-  const { columns, rows, luminanceGrid } = asciiAnalysis
+  const layout = getAsciiRenderLayoutMetrics(targetWidth, targetHeight)
+  const { columns, rows, luminanceGrid } = analyzeAsciiSourceFrame(layout.columns, layout.rows)
   const characterSet = getAsciiCharacterSet()
   const thresholdBias = settings.threshold - 128
   const {
@@ -858,7 +873,7 @@ function renderAsciiAnalysisToContext(asciiAnalysis, context, targetWidth, targe
     verticalBias,
     offsetX,
     offsetY,
-  } = getAsciiRenderLayoutMetrics(columns, rows, targetWidth, targetHeight)
+  } = layout
   const halfCellWidth = cellWidth / 2
   const halfCellHeight = cellHeight / 2
 
@@ -934,8 +949,8 @@ function formatBitmapWidth(value) {
   return `${value}px wide`
 }
 
-function formatAsciiColumns(value) {
-  return `${value} cols`
+function formatGlyphSize(value) {
+  return String(value)
 }
 
 function bindControl(id, formatter = (value) => value) {
@@ -981,7 +996,7 @@ function clearCanvas(canvas, context) {
 }
 
 function clearOutputCanvas() {
-  lastAsciiAnalysis = null
+  hasAsciiSourceFrame = false
   clearCanvas(outputCanvas, outputContext)
 }
 
@@ -1168,8 +1183,8 @@ function syncControlValues() {
   pixelWidthValue.textContent = formatBitmapWidth(settings.pixelWidth)
 
   asciiColumnsInput.value = String(settings.asciiColumns)
-  asciiColumnsValue.value = formatAsciiColumns(settings.asciiColumns)
-  asciiColumnsValue.textContent = formatAsciiColumns(settings.asciiColumns)
+  asciiColumnsValue.value = formatGlyphSize(settings.asciiColumns)
+  asciiColumnsValue.textContent = formatGlyphSize(settings.asciiColumns)
   asciiCharsetInput.value = settings.asciiCharacterSet
   asciiFontInput.value = settings.asciiFontMode
   asciiAllCapsInput.checked = settings.asciiAllCaps
@@ -1226,7 +1241,14 @@ function createExportCanvas() {
 
 function drawProcessedFrame(context, width, height) {
   if (isAsciiMode()) {
-    renderAsciiAnalysisToContext(lastAsciiAnalysis, context, width, height)
+    if (!isFrozen || isStaticImageSource()) {
+      const { width: mediaWidth, height: mediaHeight } = getRenderableDimensions()
+      const sourceRegion = getSourceRegion(mediaWidth, mediaHeight)
+
+      captureAsciiSourceFrame(sourceRegion)
+    }
+
+    renderAsciiToContext(context, width, height)
     return
   }
 
@@ -1422,7 +1444,7 @@ async function switchSource(nextSourceType) {
 }
 
 bindControl('pixel-width', formatBitmapWidth)
-bindControl('ascii-columns', formatAsciiColumns)
+bindControl('ascii-columns', formatGlyphSize)
 bindControl('ascii-letter-spacing')
 bindControl('ascii-line-spacing')
 bindControl('brightness')
@@ -1821,22 +1843,18 @@ function renderFrame() {
   outputCanvas.style.aspectRatio = `${sourceRegion.width} / ${sourceRegion.height}`
 
   if (isAsciiMode()) {
-    const columns = settings.asciiColumns
-    const rows = getAsciiRows(sourceRegion, columns)
     const previewAspectRatio = sourceRegion.width / sourceRegion.height
     const { width: previewWidth, height: previewHeight } = getAsciiPreviewRenderSize(previewAspectRatio)
 
     if (!isFrozen || isStaticImageSource()) {
-      resizeCanvas(sourceCanvas, sourceContext, columns, rows)
-      drawSourceFrame(columns, rows, sourceRegion)
-      lastAsciiAnalysis = analyzeAsciiFrame(columns, rows)
+      captureAsciiSourceFrame(sourceRegion)
     }
 
     if (resizeCanvas(outputCanvas, outputContext, previewWidth, previewHeight)) {
       updateCaptureButtons()
     }
 
-    renderAsciiAnalysisToContext(lastAsciiAnalysis, outputContext, previewWidth, previewHeight)
+    renderAsciiToContext(outputContext, previewWidth, previewHeight)
   } else if (!isFrozen || isStaticImageSource()) {
     const sourceWidth = settings.pixelWidth
     const sourceHeight = Math.max(1, Math.round((sourceRegion.height / sourceRegion.width) * sourceWidth))
