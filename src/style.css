@@ -39,16 +39,14 @@ button {
 
 .shell {
   min-height: 100vh;
-  padding: 32px;
-  display: grid;
-  place-items: center;
+  padding: clamp(12px, 1.8vw, 24px);
 }
 
 .panel {
-  width: min(100%, 960px);
+  width: 100%;
   display: grid;
   gap: 18px;
-  padding: 24px;
+  padding: clamp(14px, 1.6vw, 24px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 24px;
   background: rgba(10, 12, 18, 0.72);
@@ -56,15 +54,33 @@ button {
   backdrop-filter: blur(24px);
 }
 
-.output-grid {
+.studio-layout {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(400px, 30vw, 520px);
+  gap: clamp(16px, 1.6vw, 24px);
+  align-items: start;
+}
+
+.preview-column {
+  width: 100%;
+  min-width: 0;
+  align-self: start;
+}
+
+.side-panel {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto auto;
   gap: 16px;
+  align-self: start;
 }
 
 .controls-panel {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
   padding: 14px;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -73,24 +89,17 @@ button {
 
 .panel-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
 
 .eyebrow {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 12px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: rgba(232, 237, 255, 0.52);
-}
-
-h1 {
-  margin: 0;
-  font-size: clamp(2rem, 5vw, 3.5rem);
-  font-weight: 600;
-  letter-spacing: -0.04em;
 }
 
 .status {
@@ -121,6 +130,27 @@ h1 {
   display: grid;
   gap: 8px;
   align-content: start;
+}
+
+.controls-section {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.controls-section-wide {
+  grid-column: 1 / -1;
+}
+
+.controls-section-label {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(232, 237, 255, 0.42);
 }
 
 .control span,
@@ -160,13 +190,14 @@ h1 {
 }
 
 .control .control-value-editor {
-  width: 100%;
-  min-height: 32px;
-  padding: 6px 8px;
+  width: min(100%, 96px);
+  min-height: 0;
+  padding: 4px 6px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(7, 9, 14, 0.9);
   color: #f5f7fb;
+  align-self: start;
 }
 
 .control .control-value-editor:focus {
@@ -243,6 +274,9 @@ h1 {
 
 .preview-frame-main {
   width: 100%;
+  min-height: 0;
+  display: block;
+  padding: 6px;
 }
 
 .preview-frame-main:fullscreen {
@@ -260,7 +294,7 @@ h1 {
 
 .preview-frame-debug {
   aspect-ratio: 16 / 9;
-  max-width: 320px;
+  width: 100%;
 }
 
 .preview-frame::after {
@@ -281,6 +315,7 @@ h1 {
 }
 
 .pixel-output {
+  width: 100%;
   height: auto;
   image-rendering: crisp-edges;
   image-rendering: pixelated;
@@ -315,7 +350,14 @@ h1 {
 .debug-panel {
   display: grid;
   gap: 10px;
-  justify-items: start;
+  justify-items: stretch;
+  align-content: start;
+  width: min(100%, 240px);
+  justify-self: end;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .debug-label {
@@ -324,6 +366,31 @@ h1 {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: rgba(232, 237, 255, 0.5);
+}
+
+@media (max-width: 1180px) {
+  .studio-layout {
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 32vw, 440px);
+  }
+
+  .controls-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 920px) {
+  .studio-layout {
+    grid-template-columns: minmax(0, 1fr) clamp(320px, 36vw, 380px);
+  }
+
+  .controls-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .debug-panel {
+    width: 100%;
+    justify-self: stretch;
+  }
 }
 
 @media (max-width: 720px) {
@@ -336,15 +403,26 @@ h1 {
     border-radius: 20px;
   }
 
-  .controls-panel {
+  .studio-layout {
     grid-template-columns: 1fr;
   }
 
   .panel-header {
     flex-direction: column;
+    align-items: flex-start;
   }
 
   .status {
     white-space: normal;
+  }
+
+  .preview-frame-main {
+    min-height: auto;
+    padding: 10px;
+  }
+
+  .debug-panel {
+    width: 100%;
+    justify-self: stretch;
   }
 }
