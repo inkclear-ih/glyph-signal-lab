@@ -3,12 +3,100 @@ import './style.css'
 const app = document.querySelector('#app')
 const LIVE_BITMAP_WIDTH_MAX = 640
 const DEFAULT_ASCII_CHARSET = '@%#*+=-:. '
-const ASCII_CELL_WIDTH = 10
-const ASCII_CELL_HEIGHT = 16
 const RENDER_MODES = {
   bitmap: 'bitmap',
   ascii: 'ascii',
 }
+const ASCII_PRESET_IDS = {
+  terminal: 'terminal',
+  dense: 'dense',
+  clean: 'clean',
+  blocks: 'blocks',
+  blueprint: 'blueprint',
+  minimal: 'minimal',
+  custom: 'custom',
+}
+const ASCII_PRESETS = {
+  [ASCII_PRESET_IDS.terminal]: {
+    label: 'Terminal',
+    columns: 96,
+    characterSet: '@%#*+=-:. ',
+    allCaps: false,
+    cellWidth: 10,
+    cellHeight: 16,
+    fontFamily: '"Courier New", "Lucida Console", monospace',
+    fontWeight: '700',
+    fontSizeRatio: 0.9,
+    horizontalBias: 0,
+    verticalBias: -0.03,
+  },
+  [ASCII_PRESET_IDS.dense]: {
+    label: 'Dense',
+    columns: 124,
+    characterSet: '@#W$9876543210?!abc;:+=-,._ ',
+    allCaps: true,
+    cellWidth: 8,
+    cellHeight: 12,
+    fontFamily: '"Courier New", "Consolas", monospace',
+    fontWeight: '700',
+    fontSizeRatio: 0.96,
+    horizontalBias: 0,
+    verticalBias: -0.02,
+  },
+  [ASCII_PRESET_IDS.clean]: {
+    label: 'Clean',
+    columns: 88,
+    characterSet: '@#*+=-. ',
+    allCaps: false,
+    cellWidth: 11,
+    cellHeight: 18,
+    fontFamily: '"SFMono-Regular", "Cascadia Mono", "Consolas", monospace',
+    fontWeight: '500',
+    fontSizeRatio: 0.78,
+    horizontalBias: 0,
+    verticalBias: -0.01,
+  },
+  [ASCII_PRESET_IDS.blocks]: {
+    label: 'Blocks',
+    characterSet: '\u2588\u2593\u2592\u2591 ',
+    columns: 92,
+    allCaps: false,
+    cellWidth: 12,
+    cellHeight: 14,
+    fontFamily: '"Courier New", "Consolas", monospace',
+    fontWeight: '700',
+    fontSizeRatio: 1,
+    horizontalBias: 0,
+    verticalBias: -0.05,
+  },
+  [ASCII_PRESET_IDS.blueprint]: {
+    label: 'Blueprint',
+    columns: 100,
+    characterSet: 'WMNXK0Okxdolc:.. ',
+    allCaps: true,
+    cellWidth: 10,
+    cellHeight: 16,
+    fontFamily: '"Lucida Console", "Courier New", monospace',
+    fontWeight: '400',
+    fontSizeRatio: 0.82,
+    horizontalBias: 0.02,
+    verticalBias: -0.04,
+  },
+  [ASCII_PRESET_IDS.minimal]: {
+    label: 'Minimal',
+    columns: 72,
+    characterSet: '#*=. ',
+    allCaps: false,
+    cellWidth: 14,
+    cellHeight: 22,
+    fontFamily: '"SFMono-Regular", "Menlo", "Consolas", monospace',
+    fontWeight: '400',
+    fontSizeRatio: 0.7,
+    horizontalBias: 0,
+    verticalBias: -0.01,
+  },
+}
+const DEFAULT_ASCII_PRESET = ASCII_PRESET_IDS.terminal
 const SOURCE_TYPES = {
   camera: 'camera',
   image: 'image',
@@ -17,9 +105,17 @@ const SOURCE_TYPES = {
 const DEFAULT_SETTINGS = {
   renderMode: RENDER_MODES.bitmap,
   pixelWidth: 96,
-  asciiColumns: 96,
-  asciiCharacterSet: DEFAULT_ASCII_CHARSET,
-  asciiAllCaps: false,
+  asciiPreset: DEFAULT_ASCII_PRESET,
+  asciiColumns: ASCII_PRESETS[DEFAULT_ASCII_PRESET].columns,
+  asciiCharacterSet: ASCII_PRESETS[DEFAULT_ASCII_PRESET].characterSet,
+  asciiAllCaps: ASCII_PRESETS[DEFAULT_ASCII_PRESET].allCaps,
+  asciiCellWidth: ASCII_PRESETS[DEFAULT_ASCII_PRESET].cellWidth,
+  asciiCellHeight: ASCII_PRESETS[DEFAULT_ASCII_PRESET].cellHeight,
+  asciiFontFamily: ASCII_PRESETS[DEFAULT_ASCII_PRESET].fontFamily,
+  asciiFontWeight: ASCII_PRESETS[DEFAULT_ASCII_PRESET].fontWeight,
+  asciiFontSizeRatio: ASCII_PRESETS[DEFAULT_ASCII_PRESET].fontSizeRatio,
+  asciiHorizontalBias: ASCII_PRESETS[DEFAULT_ASCII_PRESET].horizontalBias,
+  asciiVerticalBias: ASCII_PRESETS[DEFAULT_ASCII_PRESET].verticalBias,
   brightness: 0,
   contrast: 1.15,
   threshold: 128,
@@ -88,6 +184,19 @@ app.innerHTML = `
           <select id="render-mode">
             <option value="bitmap" selected>Bitmap</option>
             <option value="ascii">ASCII</option>
+          </select>
+        </label>
+
+        <label class="control" id="ascii-preset-control" hidden>
+          <span>ASCII Preset</span>
+          <select id="ascii-preset">
+            <option value="terminal">Terminal</option>
+            <option value="dense">Dense</option>
+            <option value="clean">Clean</option>
+            <option value="blocks">Blocks</option>
+            <option value="blueprint">Blueprint</option>
+            <option value="minimal">Minimal</option>
+            <option value="custom">Custom</option>
           </select>
         </label>
 
@@ -295,6 +404,7 @@ app.innerHTML = `
 const statusEl = document.querySelector('#camera-status')
 const sourceTypeInput = document.querySelector('#source-type')
 const renderModeInput = document.querySelector('#render-mode')
+const asciiPresetInput = document.querySelector('#ascii-preset')
 const chooseFileButton = document.querySelector('#choose-file')
 const sourceFileNote = document.querySelector('#source-file-note')
 const debugLabel = document.querySelector('#debug-label')
@@ -304,6 +414,7 @@ const outputCanvas = document.querySelector('#pixel-output')
 const outputContext = outputCanvas.getContext('2d')
 const mainPreviewFrame = document.querySelector('#main-preview-frame')
 const fileInput = document.createElement('input')
+const asciiPresetControl = document.querySelector('#ascii-preset-control')
 const pixelWidthControl = document.querySelector('#pixel-width-control')
 const thresholdControl = document.querySelector('#threshold-control')
 const ditherModeControl = document.querySelector('#dither-mode-control')
@@ -378,6 +489,47 @@ function getSourceRegion(width, height) {
 
 function isAsciiMode() {
   return settings.renderMode === RENDER_MODES.ascii
+}
+
+function getAsciiStyleSettings() {
+  return {
+    cellWidth: settings.asciiCellWidth,
+    cellHeight: settings.asciiCellHeight,
+    fontFamily: settings.asciiFontFamily,
+    fontWeight: settings.asciiFontWeight,
+    fontSizeRatio: settings.asciiFontSizeRatio,
+    horizontalBias: settings.asciiHorizontalBias,
+    verticalBias: settings.asciiVerticalBias,
+  }
+}
+
+function applyAsciiPreset(presetId) {
+  const preset = ASCII_PRESETS[presetId]
+
+  if (!preset) {
+    return
+  }
+
+  settings.asciiPreset = presetId
+  settings.asciiColumns = preset.columns
+  settings.asciiCharacterSet = preset.characterSet
+  settings.asciiAllCaps = preset.allCaps
+  settings.asciiCellWidth = preset.cellWidth
+  settings.asciiCellHeight = preset.cellHeight
+  settings.asciiFontFamily = preset.fontFamily
+  settings.asciiFontWeight = preset.fontWeight
+  settings.asciiFontSizeRatio = preset.fontSizeRatio
+  settings.asciiHorizontalBias = preset.horizontalBias
+  settings.asciiVerticalBias = preset.verticalBias
+}
+
+function markAsciiPresetCustom() {
+  if (settings.asciiPreset === ASCII_PRESET_IDS.custom) {
+    return
+  }
+
+  settings.asciiPreset = ASCII_PRESET_IDS.custom
+  asciiPresetInput.value = ASCII_PRESET_IDS.custom
 }
 
 function getActiveThresholdMap() {
@@ -477,7 +629,8 @@ function getAsciiCharacterSet() {
 
 function getAsciiRows(sourceRegion, columns) {
   const sourceAspectRatio = sourceRegion.width / sourceRegion.height
-  const rows = columns / sourceAspectRatio * (ASCII_CELL_WIDTH / ASCII_CELL_HEIGHT)
+  const { cellWidth, cellHeight } = getAsciiStyleSettings()
+  const rows = columns / sourceAspectRatio * (cellWidth / cellHeight)
 
   return Math.max(1, Math.round(rows))
 }
@@ -487,14 +640,24 @@ function renderAsciiFrame(columns, rows) {
   const { data } = frame
   const characterSet = getAsciiCharacterSet()
   const thresholdBias = settings.threshold - 128
+  const {
+    cellWidth,
+    cellHeight,
+    fontFamily,
+    fontWeight,
+    fontSizeRatio,
+    horizontalBias,
+    verticalBias,
+  } = getAsciiStyleSettings()
+  const fontSize = Math.max(8, Math.round(cellHeight * fontSizeRatio))
 
   outputContext.save()
   outputContext.fillStyle = settings.backgroundColor
   outputContext.fillRect(0, 0, outputCanvas.width, outputCanvas.height)
   outputContext.fillStyle = settings.foregroundColor
-  outputContext.font = `${ASCII_CELL_HEIGHT}px monospace`
+  outputContext.font = `${fontWeight} ${fontSize}px ${fontFamily}`
   outputContext.textAlign = 'center'
-  outputContext.textBaseline = 'top'
+  outputContext.textBaseline = 'middle'
 
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < columns; x += 1) {
@@ -514,8 +677,8 @@ function renderAsciiFrame(columns, rows) {
 
       outputContext.fillText(
         character,
-        (x * ASCII_CELL_WIDTH) + (ASCII_CELL_WIDTH / 2),
-        y * ASCII_CELL_HEIGHT,
+        (x * cellWidth) + (cellWidth * (0.5 + horizontalBias)),
+        (y * cellHeight) + (cellHeight * (0.5 + verticalBias)),
       )
     }
   }
@@ -680,6 +843,7 @@ function updateSourceControls() {
 function updateRenderModeControls() {
   const showAsciiControls = isAsciiMode()
 
+  asciiPresetControl.hidden = !showAsciiControls
   pixelWidthControl.hidden = showAsciiControls
   ditherModeControl.hidden = showAsciiControls
   asciiColumnsControl.hidden = !showAsciiControls
@@ -742,6 +906,7 @@ function syncControlValues() {
   const sequenceFpsInput = document.querySelector('#sequence-fps')
 
   renderModeInput.value = settings.renderMode
+  asciiPresetInput.value = settings.asciiPreset
 
   pixelWidthInput.value = String(settings.pixelWidth)
   pixelWidthValue.value = formatBitmapWidth(settings.pixelWidth)
@@ -994,6 +1159,15 @@ bindControl('brightness')
 bindControl('contrast', (value) => value.toFixed(2))
 bindControl('threshold')
 
+document.querySelector('#ascii-columns').addEventListener('input', () => {
+  markAsciiPresetCustom()
+})
+
+asciiPresetInput.addEventListener('input', (event) => {
+  applyAsciiPreset(event.target.value)
+  syncControlValues()
+})
+
 renderModeInput.addEventListener('input', (event) => {
   settings.renderMode = event.target.value
   updateRenderModeControls()
@@ -1023,10 +1197,12 @@ document.querySelector('#dither-mode').addEventListener('input', (event) => {
 
 asciiCharsetInput.addEventListener('input', (event) => {
   settings.asciiCharacterSet = event.target.value || DEFAULT_ASCII_CHARSET
+  markAsciiPresetCustom()
 })
 
 document.querySelector('#ascii-all-caps').addEventListener('input', (event) => {
   settings.asciiAllCaps = event.target.checked
+  markAsciiPresetCustom()
 })
 
 document.querySelector('#export-scale').addEventListener('input', (event) => {
@@ -1358,8 +1534,9 @@ function renderFrame() {
     if (isAsciiMode()) {
       const columns = settings.asciiColumns
       const rows = getAsciiRows(sourceRegion, columns)
-      const outputWidth = columns * ASCII_CELL_WIDTH
-      const outputHeight = rows * ASCII_CELL_HEIGHT
+      const { cellWidth, cellHeight } = getAsciiStyleSettings()
+      const outputWidth = columns * cellWidth
+      const outputHeight = rows * cellHeight
 
       resizeCanvas(sourceCanvas, sourceContext, columns, rows)
       if (resizeCanvas(outputCanvas, outputContext, outputWidth, outputHeight)) {
