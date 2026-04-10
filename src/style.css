@@ -402,21 +402,97 @@ button {
   position: absolute;
   inset: 0;
   width: 100%;
+  min-width: 100%;
   min-height: 100%;
-  padding: 4px;
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) 20px;
+  align-items: stretch;
+  overflow: hidden;
   border-radius: var(--ui-radius-sm);
-  border: 0;
-  background: transparent;
+  border: 1px solid rgba(236, 236, 236, 0.22);
+  background: rgba(12, 12, 13, 0.96);
   color: var(--ui-text);
   font-size: var(--ui-font-size-control);
   font-weight: 500;
   letter-spacing: var(--ui-letter-spacing-ui);
   line-height: 1;
   align-self: stretch;
+  box-shadow: inset 0 0 0 1px rgba(236, 236, 236, 0.04);
 }
 
-.control .control-value-editor:focus {
+.control .control-value-editor:focus-within {
   outline: 0;
+  border-color: rgba(236, 236, 236, 0.52);
+}
+
+.control .control-value-editor-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ui-text);
+  font: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  text-transform: inherit;
+  outline: 0;
+}
+
+.control .control-value-editor-stepper {
+  display: grid;
+  grid-template-rows: minmax(10px, 1fr) minmax(10px, 1fr);
+  border-left: 1px solid rgba(236, 236, 236, 0.16);
+}
+
+.control .control-value-editor-step {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  min-width: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(236, 236, 236, 0.03);
+  color: var(--ui-text);
+  cursor: pointer;
+  line-height: 0;
+  appearance: none;
+}
+
+.control .control-value-editor-step + .control-value-editor-step {
+  border-top: 1px solid rgba(236, 236, 236, 0.12);
+}
+
+.control .control-value-editor-step::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 6px;
+  background: currentColor;
+  opacity: 0.92;
+}
+
+.control .control-value-editor-step-up::before {
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  transform: translate(-50%, -33%);
+}
+
+.control .control-value-editor-step-down::before {
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  transform: translate(-50%, -133%);
+}
+
+.control .control-value-editor-step:hover {
+  background: rgba(236, 236, 236, 0.08);
+}
+
+.control .control-value-editor-step:focus-visible {
+  outline: 1px solid rgba(236, 236, 236, 0.34);
+  outline-offset: -2px;
 }
 
 .control input[type='color'] {
@@ -675,7 +751,9 @@ button {
 
 .control select,
 .control input[type='text'],
-.control .control-value-editor {
+.control .control-value-editor,
+.control .control-value-editor-input,
+.control .control-value-editor-step {
   appearance: none;
 }
 
