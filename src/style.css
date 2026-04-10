@@ -273,6 +273,10 @@ h1 {
   object-fit: cover;
 }
 
+#image-preview.camera-preview {
+  object-fit: contain;
+}
+
 .debug-panel {
   display: grid;
   gap: 10px;

@@ -2,6 +2,11 @@ import './style.css'
 
 const app = document.querySelector('#app')
 const LIVE_BITMAP_WIDTH_MAX = 640
+const SOURCE_TYPES = {
+  camera: 'camera',
+  image: 'image',
+  video: 'video',
+}
 const DEFAULT_SETTINGS = {
   pixelWidth: 96,
   brightness: 0,
@@ -58,6 +63,23 @@ app.innerHTML = `
       </div>
 
       <section class="controls-panel" aria-label="Render controls">
+        <label class="control">
+          <span>Source</span>
+          <select id="source-type">
+            <option value="camera" selected>Camera</option>
+            <option value="image">Image</option>
+            <option value="video">Video</option>
+          </select>
+        </label>
+
+        <div class="control control-actions">
+          <span>Source File</span>
+          <div class="button-row">
+            <button id="choose-file" type="button" class="button-secondary" hidden>Choose File</button>
+          </div>
+          <small class="control-note" id="source-file-note">Live camera is active.</small>
+        </div>
+
         <label class="control">
           <span>Bitmap Width</span>
           <input
@@ -192,7 +214,7 @@ app.innerHTML = `
           <canvas
             id="pixel-output"
             class="pixel-output"
-            aria-label="Pixelated camera output"
+            aria-label="Pixelated source output"
           ></canvas>
           <button
             id="fullscreen-toggle"
@@ -204,7 +226,7 @@ app.innerHTML = `
         </div>
 
         <div class="debug-panel">
-          <p class="debug-label">Raw camera preview</p>
+          <p class="debug-label" id="debug-label">Raw camera preview</p>
           <div class="preview-frame preview-frame-debug">
             <video
               id="camera-preview"
@@ -213,6 +235,7 @@ app.innerHTML = `
               playsinline
               muted
             ></video>
+            <img id="image-preview" class="camera-preview" alt="Selected source preview" hidden />
           </div>
         </div>
       </div>
@@ -221,10 +244,20 @@ app.innerHTML = `
 `
 
 const statusEl = document.querySelector('#camera-status')
+const sourceTypeInput = document.querySelector('#source-type')
+const chooseFileButton = document.querySelector('#choose-file')
+const sourceFileNote = document.querySelector('#source-file-note')
+const debugLabel = document.querySelector('#debug-label')
 const videoEl = document.querySelector('#camera-preview')
+const imageEl = document.querySelector('#image-preview')
 const outputCanvas = document.querySelector('#pixel-output')
 const outputContext = outputCanvas.getContext('2d')
 const mainPreviewFrame = document.querySelector('#main-preview-frame')
+const fileInput = document.createElement('input')
+
+fileInput.type = 'file'
+fileInput.hidden = true
+app.append(fileInput)
 
 const sourceCanvas = document.createElement('canvas')
 const sourceContext = sourceCanvas.getContext('2d')
@@ -237,6 +270,11 @@ let isSequenceExporting = false
 let activeWebmCapture = null
 let blueNoiseThresholdMap = null
 let blueNoiseLoadFailed = false
+let currentSourceType = SOURCE_TYPES.camera
+let pendingSourceType = null
+let currentFileUrl = null
+let currentFileName = ''
+let cameraStream = null
 
 outputContext.imageSmoothingEnabled = false
 sourceContext.imageSmoothingEnabled = false
@@ -379,56 +417,137 @@ function bindControl(id, formatter = (value) => value) {
   })
 }
 
-bindControl('pixel-width', formatBitmapWidth)
-bindControl('brightness')
-bindControl('contrast', (value) => value.toFixed(2))
-bindControl('threshold')
+function isFileSource() {
+  return currentSourceType === SOURCE_TYPES.image || currentSourceType === SOURCE_TYPES.video
+}
 
-document.querySelector('#invert').addEventListener('input', (event) => {
-  settings.invert = event.target.checked
-})
+function isStaticImageSource() {
+  return currentSourceType === SOURCE_TYPES.image
+}
 
-document.querySelector('#background-color').addEventListener('input', (event) => {
-  settings.backgroundColor = event.target.value
-})
+function getDisplayedSourceType() {
+  return pendingSourceType ?? currentSourceType
+}
 
-document.querySelector('#foreground-color').addEventListener('input', (event) => {
-  settings.foregroundColor = event.target.value
-})
+function hasActiveCaptureOperation() {
+  return activeWebmCapture !== null || isSequenceExporting
+}
 
-document.querySelector('#dither-mode').addEventListener('input', (event) => {
-  if (event.target.value === 'blue-noise' && !blueNoiseThresholdMap) {
-    event.target.value = settings.ditherMode
-    setStatus('Blue Noise asset unavailable.', 'error')
+function clearCanvas(canvas, context) {
+  context.clearRect(0, 0, canvas.width, canvas.height)
+}
+
+function clearOutputCanvas() {
+  clearCanvas(outputCanvas, outputContext)
+}
+
+function revokeCurrentFileUrl() {
+  if (!currentFileUrl) {
     return
   }
 
-  settings.ditherMode = event.target.value
-})
+  URL.revokeObjectURL(currentFileUrl)
+  currentFileUrl = null
+}
 
-document.querySelector('#export-scale').addEventListener('input', (event) => {
-  settings.exportSize = event.target.value
-})
+function stopCameraStream() {
+  if (!cameraStream) {
+    return
+  }
 
-document.querySelector('#sequence-duration').addEventListener('input', (event) => {
-  settings.sequenceDuration = event.target.value
-})
+  cameraStream.getTracks().forEach((track) => track.stop())
+  cameraStream = null
+}
 
-document.querySelector('#sequence-fps').addEventListener('input', (event) => {
-  settings.sequenceFps = event.target.value
-})
+function clearVideoSource() {
+  videoEl.pause()
+  videoEl.srcObject = null
+  videoEl.removeAttribute('src')
+  videoEl.load()
+}
 
-const freezeToggleButton = document.querySelector('#freeze-toggle')
-const resetControlsButton = document.querySelector('#reset-controls')
-const exportPngButton = document.querySelector('#export-png')
-const exportSequenceButton = document.querySelector('#export-sequence')
-const exportWebmButton = document.querySelector('#export-webm')
-const stopCaptureButton = document.querySelector('#stop-capture')
-const fullscreenToggleButton = document.querySelector('#fullscreen-toggle')
+function clearImageSource() {
+  imageEl.removeAttribute('src')
+}
+
+function resetFreezeState() {
+  isFrozen = false
+  updateFreezeButton()
+}
+
+function setDebugPreview(type) {
+  const showImage = type === SOURCE_TYPES.image
+  imageEl.hidden = !showImage
+  videoEl.hidden = showImage
+  debugLabel.textContent = showImage
+    ? 'Source image preview'
+    : type === SOURCE_TYPES.video
+      ? 'Source video preview'
+      : 'Raw camera preview'
+}
+
+function getCurrentSourceElement() {
+  return currentSourceType === SOURCE_TYPES.image ? imageEl : videoEl
+}
+
+function hasRenderableSource() {
+  if (currentSourceType === SOURCE_TYPES.image) {
+    return Boolean(imageEl.src) && imageEl.complete && imageEl.naturalWidth > 0 && imageEl.naturalHeight > 0
+  }
+
+  return Boolean(videoEl.srcObject || videoEl.currentSrc) && videoEl.readyState >= 2 && videoEl.videoWidth > 0 && videoEl.videoHeight > 0
+}
+
+function getRenderableDimensions() {
+  if (currentSourceType === SOURCE_TYPES.image) {
+    return {
+      width: imageEl.naturalWidth,
+      height: imageEl.naturalHeight,
+    }
+  }
+
+  return {
+    width: videoEl.videoWidth,
+    height: videoEl.videoHeight,
+  }
+}
+
+function updateSourceFileNote() {
+  const displayedSourceType = getDisplayedSourceType()
+
+  if (displayedSourceType === SOURCE_TYPES.camera) {
+    sourceFileNote.textContent = 'Live camera is active.'
+    return
+  }
+
+  if (!currentFileName || pendingSourceType) {
+    sourceFileNote.textContent = displayedSourceType === SOURCE_TYPES.image
+      ? 'Choose a single image file.'
+      : 'Choose a single video file.'
+    return
+  }
+
+  sourceFileNote.textContent = currentFileName
+}
+
+function updateSourceControls() {
+  const displayedSourceType = getDisplayedSourceType()
+  const showFileButton = displayedSourceType === SOURCE_TYPES.image || displayedSourceType === SOURCE_TYPES.video
+  const isLocked = hasActiveCaptureOperation()
+
+  chooseFileButton.hidden = !showFileButton
+  chooseFileButton.disabled = isLocked
+  chooseFileButton.textContent = currentFileName ? 'Choose Another File' : 'Choose File'
+  sourceTypeInput.disabled = isLocked
+  fileInput.accept = displayedSourceType === SOURCE_TYPES.image ? 'image/*' : 'video/*'
+  updateSourceFileNote()
+}
 
 function updateFreezeButton() {
   freezeToggleButton.textContent = isFrozen ? 'Resume Live' : 'Freeze Frame'
   freezeToggleButton.setAttribute('aria-pressed', String(isFrozen))
+  freezeToggleButton.disabled = isStaticImageSource()
+  freezeToggleButton.title = isStaticImageSource() ? 'Freeze is only needed for camera or video sources.' : ''
 }
 
 function isUnlimitedCaptureDuration() {
@@ -442,11 +561,19 @@ function getCaptureDurationSeconds() {
 function updateCaptureButtons() {
   const isWebmRecording = activeWebmCapture !== null
   const isUnlimited = isUnlimitedCaptureDuration()
+  const canAnimate = !isStaticImageSource()
+  const hasFrames = outputCanvas.width > 0 && outputCanvas.height > 0
 
-  exportWebmButton.disabled = isWebmRecording || isSequenceExporting
-  exportSequenceButton.disabled = isWebmRecording || isSequenceExporting || isUnlimited
+  exportWebmButton.disabled = !canAnimate || !hasFrames || isWebmRecording || isSequenceExporting
+  exportSequenceButton.disabled = !canAnimate || !hasFrames || isWebmRecording || isSequenceExporting || isUnlimited
   stopCaptureButton.disabled = !isWebmRecording
-  exportSequenceButton.title = isUnlimited ? 'Until stop is available for WebM only.' : ''
+
+  exportWebmButton.title = canAnimate ? '' : 'WebM export is available for camera or video sources.'
+  exportSequenceButton.title = isUnlimited
+    ? 'Until stop is available for WebM only.'
+    : canAnimate
+      ? ''
+      : 'PNG sequence export is available for camera or video sources.'
   stopCaptureButton.title = isWebmRecording ? 'Stop the active WebM capture.' : 'No WebM capture is active.'
 }
 
@@ -490,6 +617,8 @@ function syncControlValues() {
   exportScaleInput.value = settings.exportSize
   sequenceDurationInput.value = settings.sequenceDuration
   sequenceFpsInput.value = settings.sequenceFps
+  sourceTypeInput.value = getDisplayedSourceType()
+  updateSourceControls()
   updateCaptureButtons()
 }
 
@@ -591,16 +720,215 @@ function getSupportedWebmMimeType() {
   return mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType)) ?? null
 }
 
+function drawSourceFrame(sourceWidth, sourceHeight, sourceRegion) {
+  sourceContext.drawImage(
+    getCurrentSourceElement(),
+    sourceRegion.x,
+    sourceRegion.y,
+    sourceRegion.width,
+    sourceRegion.height,
+    0,
+    0,
+    sourceWidth,
+    sourceHeight,
+  )
+}
+
+function clearLoadedFile() {
+  currentFileName = ''
+  revokeCurrentFileUrl()
+  clearVideoSource()
+  clearImageSource()
+}
+
+async function loadSelectedFile(file) {
+  clearLoadedFile()
+  currentFileName = file.name
+  currentFileUrl = URL.createObjectURL(file)
+
+  if (currentSourceType === SOURCE_TYPES.image) {
+    imageEl.src = currentFileUrl
+
+    try {
+      await imageEl.decode()
+    } catch {
+      clearLoadedFile()
+      clearOutputCanvas()
+      updateCaptureButtons()
+      updateSourceControls()
+      setStatus('Image file could not be loaded.', 'error')
+      return
+    }
+
+    updateSourceControls()
+    updateCaptureButtons()
+    setStatus('Image ready.', 'success')
+    return
+  }
+
+  videoEl.loop = true
+  videoEl.src = currentFileUrl
+
+  try {
+    await videoEl.play()
+  } catch {
+    // Playback may need a second attempt once metadata is ready.
+  }
+
+  updateSourceControls()
+  setStatus('Video ready.', 'success')
+}
+
+async function promptForFile() {
+  fileInput.value = ''
+  fileInput.click()
+}
+
+async function switchSource(nextSourceType) {
+  if (hasActiveCaptureOperation()) {
+    sourceTypeInput.value = currentSourceType
+    return
+  }
+
+  if (nextSourceType === currentSourceType) {
+    pendingSourceType = null
+    updateSourceControls()
+    return
+  }
+
+  if (nextSourceType === SOURCE_TYPES.camera) {
+    pendingSourceType = null
+    currentSourceType = nextSourceType
+    resetFreezeState()
+    stopCameraStream()
+    clearLoadedFile()
+    clearOutputCanvas()
+    setDebugPreview(currentSourceType)
+    updateSourceControls()
+    updateCaptureButtons()
+    setStatus('Switching to camera...', 'muted')
+    await startCamera()
+    return
+  }
+
+  pendingSourceType = nextSourceType
+  sourceTypeInput.value = nextSourceType
+  updateSourceControls()
+  setStatus(
+    nextSourceType === SOURCE_TYPES.image ? 'Choose an image file.' : 'Choose a video file.',
+    'muted',
+  )
+  await promptForFile()
+}
+
+bindControl('pixel-width', formatBitmapWidth)
+bindControl('brightness')
+bindControl('contrast', (value) => value.toFixed(2))
+bindControl('threshold')
+
+document.querySelector('#invert').addEventListener('input', (event) => {
+  settings.invert = event.target.checked
+})
+
+document.querySelector('#background-color').addEventListener('input', (event) => {
+  settings.backgroundColor = event.target.value
+})
+
+document.querySelector('#foreground-color').addEventListener('input', (event) => {
+  settings.foregroundColor = event.target.value
+})
+
+document.querySelector('#dither-mode').addEventListener('input', (event) => {
+  if (event.target.value === 'blue-noise' && !blueNoiseThresholdMap) {
+    event.target.value = settings.ditherMode
+    setStatus('Blue Noise asset unavailable.', 'error')
+    return
+  }
+
+  settings.ditherMode = event.target.value
+})
+
+document.querySelector('#export-scale').addEventListener('input', (event) => {
+  settings.exportSize = event.target.value
+})
+
+document.querySelector('#sequence-duration').addEventListener('input', (event) => {
+  settings.sequenceDuration = event.target.value
+  updateCaptureButtons()
+})
+
+document.querySelector('#sequence-fps').addEventListener('input', (event) => {
+  settings.sequenceFps = event.target.value
+})
+
+const freezeToggleButton = document.querySelector('#freeze-toggle')
+const resetControlsButton = document.querySelector('#reset-controls')
+const exportPngButton = document.querySelector('#export-png')
+const exportSequenceButton = document.querySelector('#export-sequence')
+const exportWebmButton = document.querySelector('#export-webm')
+const stopCaptureButton = document.querySelector('#stop-capture')
+const fullscreenToggleButton = document.querySelector('#fullscreen-toggle')
+
+sourceTypeInput.addEventListener('input', async (event) => {
+  await switchSource(event.target.value)
+})
+
+chooseFileButton.addEventListener('click', async () => {
+  if (hasActiveCaptureOperation()) {
+    return
+  }
+
+  await promptForFile()
+})
+
+fileInput.addEventListener('change', async (event) => {
+  const [file] = event.target.files ?? []
+
+  if (!file) {
+    if (pendingSourceType) {
+      pendingSourceType = null
+      sourceTypeInput.value = currentSourceType
+      updateSourceControls()
+      setStatus('Source unchanged.', 'muted')
+      return
+    }
+
+    updateSourceControls()
+    if (isFileSource()) {
+      setStatus('No file selected.', 'muted')
+    }
+    return
+  }
+
+  if (pendingSourceType) {
+    resetFreezeState()
+    stopCameraStream()
+    clearLoadedFile()
+    clearOutputCanvas()
+    currentSourceType = pendingSourceType
+    pendingSourceType = null
+    setDebugPreview(currentSourceType)
+    updateSourceControls()
+    updateCaptureButtons()
+  }
+
+  await loadSelectedFile(file)
+  updateCaptureButtons()
+})
+
 freezeToggleButton.addEventListener('click', () => {
+  if (isStaticImageSource()) {
+    return
+  }
+
   isFrozen = !isFrozen
   updateFreezeButton()
 })
 
 resetControlsButton.addEventListener('click', () => {
   Object.assign(settings, DEFAULT_SETTINGS)
-  isFrozen = false
+  resetFreezeState()
   syncControlValues()
-  updateFreezeButton()
 })
 
 exportPngButton.addEventListener('click', () => {
@@ -622,6 +950,11 @@ exportPngButton.addEventListener('click', () => {
 exportWebmButton.addEventListener('click', async () => {
   if (!outputCanvas.width || !outputCanvas.height) {
     setStatus('Nothing to export yet.', 'error')
+    return
+  }
+
+  if (isStaticImageSource()) {
+    setStatus('WebM export is available for camera or video sources.', 'error')
     return
   }
 
@@ -765,6 +1098,11 @@ exportSequenceButton.addEventListener('click', async () => {
     return
   }
 
+  if (isStaticImageSource()) {
+    setStatus('PNG sequence export is available for camera or video sources.', 'error')
+    return
+  }
+
   if (!window.showDirectoryPicker) {
     setStatus('PNG sequence export needs the File System Access API in Chrome desktop.', 'error')
     return
@@ -820,20 +1158,19 @@ exportSequenceButton.addEventListener('click', async () => {
 })
 
 function renderFrame() {
-  if (videoEl.readyState < 2) {
+  if (!hasRenderableSource()) {
     frameId = requestAnimationFrame(renderFrame)
     return
   }
 
-  const videoWidth = videoEl.videoWidth
-  const videoHeight = videoEl.videoHeight
+  const { width: mediaWidth, height: mediaHeight } = getRenderableDimensions()
 
-  if (!videoWidth || !videoHeight) {
+  if (!mediaWidth || !mediaHeight) {
     frameId = requestAnimationFrame(renderFrame)
     return
   }
 
-  const sourceRegion = getSourceRegion(videoWidth, videoHeight)
+  const sourceRegion = getSourceRegion(mediaWidth, mediaHeight)
   outputCanvas.style.aspectRatio = `${sourceRegion.width} / ${sourceRegion.height}`
 
   const sourceWidth = settings.pixelWidth
@@ -847,20 +1184,11 @@ function renderFrame() {
   if (outputCanvas.width !== sourceWidth || outputCanvas.height !== sourceHeight) {
     outputCanvas.width = sourceWidth
     outputCanvas.height = sourceHeight
+    updateCaptureButtons()
   }
 
-  if (!isFrozen) {
-    sourceContext.drawImage(
-      videoEl,
-      sourceRegion.x,
-      sourceRegion.y,
-      sourceRegion.width,
-      sourceRegion.height,
-      0,
-      0,
-      sourceWidth,
-      sourceHeight,
-    )
+  if (!isFrozen || isStaticImageSource()) {
+    drawSourceFrame(sourceWidth, sourceHeight, sourceRegion)
     applyBitmapEffect(sourceWidth, sourceHeight)
     outputContext.clearRect(0, 0, outputCanvas.width, outputCanvas.height)
     outputContext.drawImage(sourceCanvas, 0, 0)
@@ -883,16 +1211,17 @@ async function startCamera() {
     return
   }
 
+  setDebugPreview(SOURCE_TYPES.camera)
   setStatus('Requesting camera...', 'muted')
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
+    cameraStream = await navigator.mediaDevices.getUserMedia({
       video: true,
       audio: false,
     })
 
-    videoEl.srcObject = stream
-    videoEl.addEventListener('loadedmetadata', startRenderLoop, { once: true })
+    videoEl.srcObject = cameraStream
+    await videoEl.play()
     setStatus('Camera ready.', 'success')
   } catch (error) {
     if (error.name === 'NotAllowedError') {
@@ -910,9 +1239,12 @@ async function startCamera() {
 }
 
 syncControlValues()
+updateSourceControls()
 updateFreezeButton()
 updateFullscreenButton()
 updateCaptureButtons()
+setDebugPreview(currentSourceType)
+startRenderLoop()
 
 try {
   blueNoiseThresholdMap = await loadBlueNoiseThresholdMap()
@@ -922,4 +1254,4 @@ try {
   setStatus('Blue Noise asset failed to load.', 'error')
 }
 
-startCamera()
+await startCamera()
