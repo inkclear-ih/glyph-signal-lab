@@ -3,6 +3,12 @@ import './style.css'
 const app = document.querySelector('#app')
 const LIVE_BITMAP_WIDTH_MAX = 640
 const DEFAULT_ASCII_CHARSET = '@%#*+=-:. '
+const ASCII_CUSTOM_FONT_URL = `${import.meta.env.BASE_URL}fonts/IHSerrucho-100.otf`
+const ASCII_CUSTOM_FONT_FAMILY = 'GlyphSignalAscii'
+const ASCII_FONT_MODES = {
+  monospace: 'monospace',
+  studio: 'studio',
+}
 const RENDER_MODES = {
   bitmap: 'bitmap',
   ascii: 'ascii',
@@ -116,6 +122,9 @@ const DEFAULT_SETTINGS = {
   asciiFontSizeRatio: ASCII_PRESETS[DEFAULT_ASCII_PRESET].fontSizeRatio,
   asciiHorizontalBias: ASCII_PRESETS[DEFAULT_ASCII_PRESET].horizontalBias,
   asciiVerticalBias: ASCII_PRESETS[DEFAULT_ASCII_PRESET].verticalBias,
+  asciiFontMode: ASCII_FONT_MODES.monospace,
+  asciiLetterSpacing: 0,
+  asciiLineSpacing: 0,
   brightness: 0,
   contrast: 1.15,
   threshold: 128,
@@ -246,9 +255,44 @@ app.innerHTML = `
           <small class="control-note">Characters are used left to right: dark to light.</small>
         </label>
 
+        <label class="control" id="ascii-font-control" hidden>
+          <span>ASCII Font</span>
+          <select id="ascii-font">
+            <option value="monospace" selected>Monospace</option>
+            <option value="studio" disabled>Studio Font</option>
+          </select>
+          <small class="control-note" id="ascii-font-note">Studio Font loading...</small>
+        </label>
+
         <label class="control control-toggle" id="ascii-all-caps-control" hidden>
           <span>All Caps</span>
           <input id="ascii-all-caps" type="checkbox" />
+        </label>
+
+        <label class="control" id="ascii-letter-spacing-control" hidden>
+          <span>Letter Spacing</span>
+          <input
+            id="ascii-letter-spacing"
+            type="range"
+            min="-4"
+            max="20"
+            step="1"
+            value="${settings.asciiLetterSpacing}"
+          />
+          <output id="ascii-letter-spacing-value">${settings.asciiLetterSpacing}</output>
+        </label>
+
+        <label class="control" id="ascii-line-spacing-control" hidden>
+          <span>Line Spacing</span>
+          <input
+            id="ascii-line-spacing"
+            type="range"
+            min="-4"
+            max="24"
+            step="1"
+            value="${settings.asciiLineSpacing}"
+          />
+          <output id="ascii-line-spacing-value">${settings.asciiLineSpacing}</output>
         </label>
 
         <label class="control">
@@ -421,7 +465,12 @@ const ditherModeControl = document.querySelector('#dither-mode-control')
 const asciiColumnsControl = document.querySelector('#ascii-columns-control')
 const asciiCharsetInput = document.querySelector('#ascii-charset')
 const asciiCharsetControl = document.querySelector('#ascii-charset-control')
+const asciiFontInput = document.querySelector('#ascii-font')
+const asciiFontControl = document.querySelector('#ascii-font-control')
+const asciiFontNote = document.querySelector('#ascii-font-note')
 const asciiAllCapsControl = document.querySelector('#ascii-all-caps-control')
+const asciiLetterSpacingControl = document.querySelector('#ascii-letter-spacing-control')
+const asciiLineSpacingControl = document.querySelector('#ascii-line-spacing-control')
 
 fileInput.type = 'file'
 fileInput.hidden = true
@@ -443,6 +492,13 @@ let pendingSourceType = null
 let currentFileUrl = null
 let currentFileName = ''
 let cameraStream = null
+let asciiCustomFontStatus = 'loading'
+let lastAsciiAnalysis = null
+let previewResizeObserver = null
+const asciiPreviewSize = {
+  width: 0,
+  height: 0,
+}
 
 outputContext.imageSmoothingEnabled = false
 sourceContext.imageSmoothingEnabled = false
@@ -495,11 +551,95 @@ function getAsciiStyleSettings() {
   return {
     cellWidth: settings.asciiCellWidth,
     cellHeight: settings.asciiCellHeight,
-    fontFamily: settings.asciiFontFamily,
+    fontFamily: getActiveAsciiFontFamily(),
     fontWeight: settings.asciiFontWeight,
     fontSizeRatio: settings.asciiFontSizeRatio,
     horizontalBias: settings.asciiHorizontalBias,
     verticalBias: settings.asciiVerticalBias,
+    letterSpacing: settings.asciiLetterSpacing,
+    lineSpacing: settings.asciiLineSpacing,
+  }
+}
+
+function getActiveAsciiFontFamily() {
+  if (settings.asciiFontMode === ASCII_FONT_MODES.studio && asciiCustomFontStatus === 'loaded') {
+    return `"${ASCII_CUSTOM_FONT_FAMILY}", ${settings.asciiFontFamily}`
+  }
+
+  return settings.asciiFontFamily
+}
+
+function getAsciiLayoutMetrics(columns, rows) {
+  const {
+    cellWidth,
+    cellHeight,
+    fontWeight,
+    fontFamily,
+    fontSizeRatio,
+    horizontalBias,
+    verticalBias,
+    letterSpacing,
+    lineSpacing,
+  } = getAsciiStyleSettings()
+  const fontSize = Math.max(8, Math.round(cellHeight * fontSizeRatio))
+  const horizontalAdvance = cellWidth + letterSpacing
+  const verticalAdvance = cellHeight + lineSpacing
+  const outputWidth = Math.max(1, Math.round(cellWidth + (Math.max(0, columns - 1) * horizontalAdvance)))
+  const outputHeight = Math.max(1, Math.round(cellHeight + (Math.max(0, rows - 1) * verticalAdvance)))
+
+  return {
+    cellWidth,
+    cellHeight,
+    fontWeight,
+    fontFamily,
+    fontSize,
+    horizontalBias,
+    verticalBias,
+    horizontalAdvance,
+    verticalAdvance,
+    outputWidth,
+    outputHeight,
+  }
+}
+
+function updateAsciiFontUi() {
+  const studioOption = asciiFontInput.querySelector(`option[value="${ASCII_FONT_MODES.studio}"]`)
+  const isLoaded = asciiCustomFontStatus === 'loaded'
+  const isFailed = asciiCustomFontStatus === 'failed'
+
+  studioOption.disabled = !isLoaded
+
+  if (settings.asciiFontMode === ASCII_FONT_MODES.studio && !isLoaded) {
+    settings.asciiFontMode = ASCII_FONT_MODES.monospace
+  }
+
+  asciiFontInput.value = settings.asciiFontMode
+  asciiFontNote.textContent = isLoaded
+    ? 'Studio Font ready.'
+    : isFailed
+      ? 'Studio Font failed to load. Using monospace.'
+      : 'Studio Font loading...'
+}
+
+async function loadAsciiCustomFont() {
+  if (!('FontFace' in window) || !document.fonts) {
+    asciiCustomFontStatus = 'failed'
+    updateAsciiFontUi()
+    setStatus('Studio Font could not load. Using monospace.', 'error')
+    return
+  }
+
+  try {
+    const fontFace = new FontFace(ASCII_CUSTOM_FONT_FAMILY, `url(${ASCII_CUSTOM_FONT_URL})`)
+    const loadedFontFace = await fontFace.load()
+    document.fonts.add(loadedFontFace)
+    asciiCustomFontStatus = 'loaded'
+    updateAsciiFontUi()
+  } catch (error) {
+    asciiCustomFontStatus = 'failed'
+    console.error(error)
+    updateAsciiFontUi()
+    setStatus('Studio Font could not load. Using monospace.', 'error')
   }
 }
 
@@ -584,11 +724,18 @@ function clampByte(value) {
   return Math.max(0, Math.min(255, value))
 }
 
-function getAdjustedLuminance(red, green, blue) {
-  const luminance = (0.299 * red) + (0.587 * green) + (0.114 * blue)
+function getBaseLuminance(red, green, blue) {
+  return (0.299 * red) + (0.587 * green) + (0.114 * blue)
+}
+
+function adjustLuminance(luminance) {
   const adjusted = ((luminance - 128) * settings.contrast) + 128 + settings.brightness
 
   return clampByte(adjusted)
+}
+
+function getAdjustedLuminance(red, green, blue) {
+  return adjustLuminance(getBaseLuminance(red, green, blue))
 }
 
 function applyBitmapEffect(width, height) {
@@ -635,34 +782,89 @@ function getAsciiRows(sourceRegion, columns) {
   return Math.max(1, Math.round(rows))
 }
 
-function renderAsciiFrame(columns, rows) {
+function analyzeAsciiFrame(columns, rows) {
   const frame = sourceContext.getImageData(0, 0, columns, rows)
   const { data } = frame
+  const luminanceGrid = new Uint8ClampedArray(columns * rows)
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < columns; x += 1) {
+      const pixelIndex = (y * columns) + x
+      const index = pixelIndex * 4
+
+      luminanceGrid[pixelIndex] = Math.round(getBaseLuminance(data[index], data[index + 1], data[index + 2]))
+    }
+  }
+
+  return {
+    columns,
+    rows,
+    luminanceGrid,
+  }
+}
+
+function getAsciiRenderLayoutMetrics(columns, rows, targetWidth, targetHeight) {
+  const baseMetrics = getAsciiLayoutMetrics(columns, rows)
+  const scaleX = targetWidth / baseMetrics.outputWidth
+  const scaleY = targetHeight / baseMetrics.outputHeight
+  const cellWidth = baseMetrics.cellWidth * scaleX
+  const cellHeight = baseMetrics.cellHeight * scaleY
+  const horizontalAdvance = baseMetrics.horizontalAdvance * scaleX
+  const verticalAdvance = baseMetrics.verticalAdvance * scaleY
+  const gridWidth = cellWidth + (Math.max(0, columns - 1) * horizontalAdvance)
+  const gridHeight = cellHeight + (Math.max(0, rows - 1) * verticalAdvance)
+
+  return {
+    cellWidth,
+    cellHeight,
+    horizontalAdvance,
+    verticalAdvance,
+    fontFamily: baseMetrics.fontFamily,
+    fontWeight: baseMetrics.fontWeight,
+    fontSize: Math.max(8, Math.round(baseMetrics.fontSize * scaleY)),
+    horizontalBias: baseMetrics.horizontalBias,
+    verticalBias: baseMetrics.verticalBias,
+    offsetX: (targetWidth - gridWidth) / 2,
+    offsetY: (targetHeight - gridHeight) / 2,
+  }
+}
+
+function renderAsciiAnalysisToContext(asciiAnalysis, context, targetWidth, targetHeight) {
+  if (!asciiAnalysis) {
+    context.clearRect(0, 0, targetWidth, targetHeight)
+    return
+  }
+
+  const { columns, rows, luminanceGrid } = asciiAnalysis
   const characterSet = getAsciiCharacterSet()
   const thresholdBias = settings.threshold - 128
   const {
     cellWidth,
     cellHeight,
+    horizontalAdvance,
+    verticalAdvance,
     fontFamily,
     fontWeight,
-    fontSizeRatio,
+    fontSize,
     horizontalBias,
     verticalBias,
-  } = getAsciiStyleSettings()
-  const fontSize = Math.max(8, Math.round(cellHeight * fontSizeRatio))
+    offsetX,
+    offsetY,
+  } = getAsciiRenderLayoutMetrics(columns, rows, targetWidth, targetHeight)
 
-  outputContext.save()
-  outputContext.fillStyle = settings.backgroundColor
-  outputContext.fillRect(0, 0, outputCanvas.width, outputCanvas.height)
-  outputContext.fillStyle = settings.foregroundColor
-  outputContext.font = `${fontWeight} ${fontSize}px ${fontFamily}`
-  outputContext.textAlign = 'center'
-  outputContext.textBaseline = 'middle'
+  context.save()
+  context.clearRect(0, 0, targetWidth, targetHeight)
+  context.fillStyle = settings.backgroundColor
+  context.fillRect(0, 0, targetWidth, targetHeight)
+  context.fillStyle = settings.foregroundColor
+  context.font = `${fontWeight} ${fontSize}px ${fontFamily}`
+  context.textAlign = 'center'
+  context.textBaseline = 'middle'
 
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < columns; x += 1) {
-      const index = ((y * columns) + x) * 4
-      const clipped = getAdjustedLuminance(data[index], data[index + 1], data[index + 2])
+      const index = (y * columns) + x
+      const clipped = adjustLuminance(luminanceGrid[index])
       const biased = clampByte(clipped + thresholdBias)
       const normalized = settings.invert ? 1 - (biased / 255) : biased / 255
       const characterIndex = Math.min(
@@ -675,15 +877,35 @@ function renderAsciiFrame(columns, rows) {
         continue
       }
 
-      outputContext.fillText(
+      context.fillText(
         character,
-        (x * cellWidth) + (cellWidth * (0.5 + horizontalBias)),
-        (y * cellHeight) + (cellHeight * (0.5 + verticalBias)),
+        Math.round(offsetX + (x * horizontalAdvance) + (cellWidth * (0.5 + horizontalBias))),
+        Math.round(offsetY + (y * verticalAdvance) + (cellHeight * (0.5 + verticalBias))),
       )
     }
   }
 
-  outputContext.restore()
+  context.restore()
+}
+
+function updateAsciiPreviewSize(aspectRatio) {
+  const rect = outputCanvas.getBoundingClientRect()
+  const width = rect.width || outputCanvas.clientWidth || mainPreviewFrame.clientWidth || 1
+  const height = rect.height || outputCanvas.clientHeight || (width / aspectRatio)
+
+  asciiPreviewSize.width = Math.max(1, width)
+  asciiPreviewSize.height = Math.max(1, height)
+}
+
+function getAsciiPreviewRenderSize(aspectRatio) {
+  updateAsciiPreviewSize(aspectRatio)
+
+  const devicePixelRatio = window.devicePixelRatio || 1
+
+  return {
+    width: Math.max(1, Math.round(asciiPreviewSize.width * devicePixelRatio)),
+    height: Math.max(1, Math.round(asciiPreviewSize.height * devicePixelRatio)),
+  }
 }
 
 function formatBitmapWidth(value) {
@@ -703,6 +925,8 @@ function bindControl(id, formatter = (value) => value) {
     const settingKey = ({
       'pixel-width': 'pixelWidth',
       'ascii-columns': 'asciiColumns',
+      'ascii-letter-spacing': 'asciiLetterSpacing',
+      'ascii-line-spacing': 'asciiLineSpacing',
     })[id] ?? id
 
     settings[settingKey] = value
@@ -735,6 +959,7 @@ function clearCanvas(canvas, context) {
 }
 
 function clearOutputCanvas() {
+  lastAsciiAnalysis = null
   clearCanvas(outputCanvas, outputContext)
 }
 
@@ -848,7 +1073,10 @@ function updateRenderModeControls() {
   ditherModeControl.hidden = showAsciiControls
   asciiColumnsControl.hidden = !showAsciiControls
   asciiCharsetControl.hidden = !showAsciiControls
+  asciiFontControl.hidden = !showAsciiControls
   asciiAllCapsControl.hidden = !showAsciiControls
+  asciiLetterSpacingControl.hidden = !showAsciiControls
+  asciiLineSpacingControl.hidden = !showAsciiControls
 }
 
 function updateFreezeButton() {
@@ -890,7 +1118,12 @@ function syncControlValues() {
   const pixelWidthValue = document.querySelector('#pixel-width-value')
   const asciiColumnsInput = document.querySelector('#ascii-columns')
   const asciiColumnsValue = document.querySelector('#ascii-columns-value')
+  const asciiFontInput = document.querySelector('#ascii-font')
   const asciiAllCapsInput = document.querySelector('#ascii-all-caps')
+  const asciiLetterSpacingInput = document.querySelector('#ascii-letter-spacing')
+  const asciiLetterSpacingValue = document.querySelector('#ascii-letter-spacing-value')
+  const asciiLineSpacingInput = document.querySelector('#ascii-line-spacing')
+  const asciiLineSpacingValue = document.querySelector('#ascii-line-spacing-value')
   const brightnessInput = document.querySelector('#brightness')
   const brightnessValue = document.querySelector('#brightness-value')
   const contrastInput = document.querySelector('#contrast')
@@ -916,7 +1149,14 @@ function syncControlValues() {
   asciiColumnsValue.value = formatAsciiColumns(settings.asciiColumns)
   asciiColumnsValue.textContent = formatAsciiColumns(settings.asciiColumns)
   asciiCharsetInput.value = settings.asciiCharacterSet
+  asciiFontInput.value = settings.asciiFontMode
   asciiAllCapsInput.checked = settings.asciiAllCaps
+  asciiLetterSpacingInput.value = String(settings.asciiLetterSpacing)
+  asciiLetterSpacingValue.value = String(settings.asciiLetterSpacing)
+  asciiLetterSpacingValue.textContent = String(settings.asciiLetterSpacing)
+  asciiLineSpacingInput.value = String(settings.asciiLineSpacing)
+  asciiLineSpacingValue.value = String(settings.asciiLineSpacing)
+  asciiLineSpacingValue.textContent = String(settings.asciiLineSpacing)
 
   brightnessInput.value = String(settings.brightness)
   brightnessValue.value = String(settings.brightness)
@@ -938,6 +1178,7 @@ function syncControlValues() {
   sequenceDurationInput.value = settings.sequenceDuration
   sequenceFpsInput.value = settings.sequenceFps
   sourceTypeInput.value = getDisplayedSourceType()
+  updateAsciiFontUi()
   updateRenderModeControls()
   updateSourceControls()
   updateCaptureButtons()
@@ -962,6 +1203,11 @@ function createExportCanvas() {
 }
 
 function drawProcessedFrame(context, width, height) {
+  if (isAsciiMode()) {
+    renderAsciiAnalysisToContext(lastAsciiAnalysis, context, width, height)
+    return
+  }
+
   context.clearRect(0, 0, width, height)
   context.drawImage(outputCanvas, 0, 0, width, height)
 }
@@ -1155,6 +1401,8 @@ async function switchSource(nextSourceType) {
 
 bindControl('pixel-width', formatBitmapWidth)
 bindControl('ascii-columns', formatAsciiColumns)
+bindControl('ascii-letter-spacing')
+bindControl('ascii-line-spacing')
 bindControl('brightness')
 bindControl('contrast', (value) => value.toFixed(2))
 bindControl('threshold')
@@ -1166,6 +1414,18 @@ document.querySelector('#ascii-columns').addEventListener('input', () => {
 asciiPresetInput.addEventListener('input', (event) => {
   applyAsciiPreset(event.target.value)
   syncControlValues()
+})
+
+asciiFontInput.addEventListener('input', (event) => {
+  if (event.target.value === ASCII_FONT_MODES.studio && asciiCustomFontStatus !== 'loaded') {
+    settings.asciiFontMode = ASCII_FONT_MODES.monospace
+    asciiFontInput.value = ASCII_FONT_MODES.monospace
+    setStatus('Studio Font unavailable. Using monospace.', 'error')
+    return
+  }
+
+  settings.asciiFontMode = event.target.value
+  markAsciiPresetCustom()
 })
 
 renderModeInput.addEventListener('input', (event) => {
@@ -1202,6 +1462,14 @@ asciiCharsetInput.addEventListener('input', (event) => {
 
 document.querySelector('#ascii-all-caps').addEventListener('input', (event) => {
   settings.asciiAllCaps = event.target.checked
+  markAsciiPresetCustom()
+})
+
+document.querySelector('#ascii-letter-spacing').addEventListener('input', () => {
+  markAsciiPresetCustom()
+})
+
+document.querySelector('#ascii-line-spacing').addEventListener('input', () => {
   markAsciiPresetCustom()
 })
 
@@ -1530,35 +1798,39 @@ function renderFrame() {
   const sourceRegion = getSourceRegion(mediaWidth, mediaHeight)
   outputCanvas.style.aspectRatio = `${sourceRegion.width} / ${sourceRegion.height}`
 
-  if (!isFrozen || isStaticImageSource()) {
-    if (isAsciiMode()) {
-      const columns = settings.asciiColumns
-      const rows = getAsciiRows(sourceRegion, columns)
-      const { cellWidth, cellHeight } = getAsciiStyleSettings()
-      const outputWidth = columns * cellWidth
-      const outputHeight = rows * cellHeight
+  if (isAsciiMode()) {
+    const columns = settings.asciiColumns
+    const rows = getAsciiRows(sourceRegion, columns)
+    const { outputWidth, outputHeight } = getAsciiLayoutMetrics(columns, rows)
+    const previewAspectRatio = outputWidth / outputHeight
+    const { width: previewWidth, height: previewHeight } = getAsciiPreviewRenderSize(previewAspectRatio)
 
+    outputCanvas.style.aspectRatio = `${outputWidth} / ${outputHeight}`
+
+    if (!isFrozen || isStaticImageSource()) {
       resizeCanvas(sourceCanvas, sourceContext, columns, rows)
-      if (resizeCanvas(outputCanvas, outputContext, outputWidth, outputHeight)) {
-        updateCaptureButtons()
-      }
-
       drawSourceFrame(columns, rows, sourceRegion)
-      renderAsciiFrame(columns, rows)
-    } else {
-      const sourceWidth = settings.pixelWidth
-      const sourceHeight = Math.max(1, Math.round((sourceRegion.height / sourceRegion.width) * sourceWidth))
-
-      resizeCanvas(sourceCanvas, sourceContext, sourceWidth, sourceHeight)
-      if (resizeCanvas(outputCanvas, outputContext, sourceWidth, sourceHeight)) {
-        updateCaptureButtons()
-      }
-
-      drawSourceFrame(sourceWidth, sourceHeight, sourceRegion)
-      applyBitmapEffect(sourceWidth, sourceHeight)
-      outputContext.clearRect(0, 0, outputCanvas.width, outputCanvas.height)
-      outputContext.drawImage(sourceCanvas, 0, 0)
+      lastAsciiAnalysis = analyzeAsciiFrame(columns, rows)
     }
+
+    if (resizeCanvas(outputCanvas, outputContext, previewWidth, previewHeight)) {
+      updateCaptureButtons()
+    }
+
+    renderAsciiAnalysisToContext(lastAsciiAnalysis, outputContext, previewWidth, previewHeight)
+  } else if (!isFrozen || isStaticImageSource()) {
+    const sourceWidth = settings.pixelWidth
+    const sourceHeight = Math.max(1, Math.round((sourceRegion.height / sourceRegion.width) * sourceWidth))
+
+    resizeCanvas(sourceCanvas, sourceContext, sourceWidth, sourceHeight)
+    if (resizeCanvas(outputCanvas, outputContext, sourceWidth, sourceHeight)) {
+      updateCaptureButtons()
+    }
+
+    drawSourceFrame(sourceWidth, sourceHeight, sourceRegion)
+    applyBitmapEffect(sourceWidth, sourceHeight)
+    outputContext.clearRect(0, 0, outputCanvas.width, outputCanvas.height)
+    outputContext.drawImage(sourceCanvas, 0, 0)
   }
 
   frameId = requestAnimationFrame(renderFrame)
@@ -1613,6 +1885,21 @@ updateFullscreenButton()
 updateCaptureButtons()
 setDebugPreview(currentSourceType)
 startRenderLoop()
+updateAsciiFontUi()
+void loadAsciiCustomFont()
+
+if (window.ResizeObserver) {
+  previewResizeObserver = new ResizeObserver(() => {
+    const aspectRatio = outputCanvas.width && outputCanvas.height
+      ? outputCanvas.width / outputCanvas.height
+      : 16 / 9
+
+    updateAsciiPreviewSize(aspectRatio)
+  })
+
+  previewResizeObserver.observe(mainPreviewFrame)
+  previewResizeObserver.observe(outputCanvas)
+}
 
 try {
   blueNoiseThresholdMap = await loadBlueNoiseThresholdMap()
