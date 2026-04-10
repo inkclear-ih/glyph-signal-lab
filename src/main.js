@@ -1132,6 +1132,25 @@ function clampToRangeStep(value, min, max, step, base = min) {
   return Number((base + (stepCount * step)).toFixed(precision))
 }
 
+function updateRangeInputVisual(input) {
+  if (!input || input.type !== 'range') {
+    return
+  }
+
+  const min = Number(input.min)
+  const max = Number(input.max)
+  const value = Number(input.value)
+
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min || !Number.isFinite(value)) {
+    input.style.setProperty('--range-fill-percent', '50%')
+    return
+  }
+
+  const percent = ((value - min) / (max - min)) * 100
+  const clampedPercent = Math.min(100, Math.max(0, percent))
+  input.style.setProperty('--range-fill-percent', `${clampedPercent}%`)
+}
+
 function beginInlineOutputEdit(id, input, output) {
   if (!output || output.dataset.editing === 'true') {
     return
@@ -1161,8 +1180,7 @@ function beginInlineOutputEdit(id, input, output) {
   editor.style.textTransform = outputStyles.textTransform
 
   output.dataset.editing = 'true'
-  output.hidden = true
-  output.insertAdjacentElement('afterend', editor)
+  output.append(editor)
   editor.focus()
   editor.select()
 
@@ -1179,12 +1197,14 @@ function beginInlineOutputEdit(id, input, output) {
       if (Number.isFinite(parsedValue)) {
         const nextValue = clampToRangeStep(parsedValue, min, max, step)
         input.value = String(nextValue)
+        editor.remove()
+        delete output.dataset.editing
         input.dispatchEvent(new Event('input', { bubbles: true }))
+        return
       }
     }
 
     editor.remove()
-    output.hidden = false
     delete output.dataset.editing
   }
 
@@ -1210,6 +1230,8 @@ function bindControl(id) {
   const input = document.querySelector(`#${id}`)
   const output = document.querySelector(`#${id}-value`)
 
+  updateRangeInputVisual(input)
+
   input.addEventListener('input', () => {
     const rawValue = input.type === 'range' ? Number(input.value) : input.checked
     const value = input.type === 'range' ? getControlStateValue(id, rawValue) : rawValue
@@ -1222,6 +1244,8 @@ function bindControl(id) {
       output.value = formattedValue
       output.textContent = formattedValue
     }
+
+    updateRangeInputVisual(input)
   })
 
   if (input.type === 'range' && output) {
