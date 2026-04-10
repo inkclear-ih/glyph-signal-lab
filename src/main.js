@@ -235,7 +235,7 @@ app.innerHTML = `
           <input
             id="ascii-columns"
             type="range"
-            min="48"
+            min="10"
             max="240"
             step="2"
             value="${settings.asciiColumns}"
@@ -804,13 +804,21 @@ function analyzeAsciiFrame(columns, rows) {
 }
 
 function getAsciiRenderLayoutMetrics(columns, rows, targetWidth, targetHeight) {
-  const baseMetrics = getAsciiLayoutMetrics(columns, rows)
-  const scaleX = targetWidth / baseMetrics.outputWidth
-  const scaleY = targetHeight / baseMetrics.outputHeight
-  const cellWidth = baseMetrics.cellWidth * scaleX
-  const cellHeight = baseMetrics.cellHeight * scaleY
-  const horizontalAdvance = baseMetrics.horizontalAdvance * scaleX
-  const verticalAdvance = baseMetrics.verticalAdvance * scaleY
+  const {
+    cellWidth: referenceCellWidth,
+    cellHeight: referenceCellHeight,
+    fontFamily,
+    fontWeight,
+    fontSizeRatio,
+    horizontalBias,
+    verticalBias,
+    letterSpacing,
+    lineSpacing,
+  } = getAsciiStyleSettings()
+  const cellWidth = targetWidth / columns
+  const cellHeight = targetHeight / rows
+  const horizontalAdvance = cellWidth + (letterSpacing * (cellWidth / referenceCellWidth))
+  const verticalAdvance = cellHeight + (lineSpacing * (cellHeight / referenceCellHeight))
   const gridWidth = cellWidth + (Math.max(0, columns - 1) * horizontalAdvance)
   const gridHeight = cellHeight + (Math.max(0, rows - 1) * verticalAdvance)
 
@@ -819,11 +827,11 @@ function getAsciiRenderLayoutMetrics(columns, rows, targetWidth, targetHeight) {
     cellHeight,
     horizontalAdvance,
     verticalAdvance,
-    fontFamily: baseMetrics.fontFamily,
-    fontWeight: baseMetrics.fontWeight,
-    fontSize: Math.max(8, Math.round(baseMetrics.fontSize * scaleY)),
-    horizontalBias: baseMetrics.horizontalBias,
-    verticalBias: baseMetrics.verticalBias,
+    fontFamily,
+    fontWeight,
+    fontSize: Math.max(8, Math.round(cellHeight * fontSizeRatio)),
+    horizontalBias,
+    verticalBias,
     offsetX: (targetWidth - gridWidth) / 2,
     offsetY: (targetHeight - gridHeight) / 2,
   }
@@ -851,6 +859,8 @@ function renderAsciiAnalysisToContext(asciiAnalysis, context, targetWidth, targe
     offsetX,
     offsetY,
   } = getAsciiRenderLayoutMetrics(columns, rows, targetWidth, targetHeight)
+  const halfCellWidth = cellWidth / 2
+  const halfCellHeight = cellHeight / 2
 
   context.save()
   context.clearRect(0, 0, targetWidth, targetHeight)
@@ -877,10 +887,22 @@ function renderAsciiAnalysisToContext(asciiAnalysis, context, targetWidth, targe
         continue
       }
 
+      const centerX = offsetX + (x * horizontalAdvance) + (cellWidth * (0.5 + horizontalBias))
+      const centerY = offsetY + (y * verticalAdvance) + (cellHeight * (0.5 + verticalBias))
+
+      if (
+        centerX + halfCellWidth < 0
+        || centerX - halfCellWidth > targetWidth
+        || centerY + halfCellHeight < 0
+        || centerY - halfCellHeight > targetHeight
+      ) {
+        continue
+      }
+
       context.fillText(
         character,
-        Math.round(offsetX + (x * horizontalAdvance) + (cellWidth * (0.5 + horizontalBias))),
-        Math.round(offsetY + (y * verticalAdvance) + (cellHeight * (0.5 + verticalBias))),
+        Math.round(centerX),
+        Math.round(centerY),
       )
     }
   }
@@ -1801,11 +1823,8 @@ function renderFrame() {
   if (isAsciiMode()) {
     const columns = settings.asciiColumns
     const rows = getAsciiRows(sourceRegion, columns)
-    const { outputWidth, outputHeight } = getAsciiLayoutMetrics(columns, rows)
-    const previewAspectRatio = outputWidth / outputHeight
+    const previewAspectRatio = sourceRegion.width / sourceRegion.height
     const { width: previewWidth, height: previewHeight } = getAsciiPreviewRenderSize(previewAspectRatio)
-
-    outputCanvas.style.aspectRatio = `${outputWidth} / ${outputHeight}`
 
     if (!isFrozen || isStaticImageSource()) {
       resizeCanvas(sourceCanvas, sourceContext, columns, rows)
