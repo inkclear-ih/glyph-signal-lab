@@ -22,6 +22,7 @@
   --ui-slider-thumb: #ececec;
   --ui-slider-track-height: 4px;
   --ui-slider-thumb-size: 14px;
+  --ui-slider-thumb-ring: calc((var(--ui-slider-thumb-size) - var(--ui-slider-track-height)) / 2);
   --ui-font-size-control: 12px;
   --ui-letter-spacing-ui: 0.08em;
   font-family: var(--ui-font-family);
@@ -272,15 +273,17 @@ button {
 
 .control input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: var(--ui-slider-thumb-size);
-  height: var(--ui-slider-thumb-size);
-  margin-top: calc((var(--ui-slider-track-height) - var(--ui-slider-thumb-size)) / 2);
-  border: 1px solid rgba(12, 12, 13, 0.55);
+  width: var(--ui-slider-track-height);
+  height: var(--ui-slider-track-height);
+  margin-top: 0;
+  border: 0;
   border-radius: 50%;
-  background: var(--ui-slider-thumb);
+  background: transparent;
   box-shadow:
     -100vw 0 0 100vw var(--ui-slider-fill),
-    0 0 0 1px rgba(236, 236, 236, 0.08);
+    0 0 0 var(--ui-slider-thumb-ring) var(--ui-slider-thumb),
+    0 0 0 calc(var(--ui-slider-thumb-ring) + 1px) rgba(12, 12, 13, 0.55),
+    0 0 0 calc(var(--ui-slider-thumb-ring) + 2px) rgba(236, 236, 236, 0.08);
 }
 
 .control input[type='range']::-moz-range-track {
@@ -308,8 +311,10 @@ button {
 .control input[type='range']:focus-visible::-webkit-slider-thumb {
   box-shadow:
     -100vw 0 0 100vw var(--ui-slider-fill),
-    0 0 0 1px rgba(236, 236, 236, 0.08),
-    0 0 0 3px rgba(236, 236, 236, 0.14);
+    0 0 0 var(--ui-slider-thumb-ring) var(--ui-slider-thumb),
+    0 0 0 calc(var(--ui-slider-thumb-ring) + 1px) rgba(12, 12, 13, 0.55),
+    0 0 0 calc(var(--ui-slider-thumb-ring) + 2px) rgba(236, 236, 236, 0.08),
+    0 0 0 calc(var(--ui-slider-thumb-ring) + 4px) rgba(236, 236, 236, 0.14);
 }
 
 .control input[type='range']:focus-visible::-moz-range-thumb {
