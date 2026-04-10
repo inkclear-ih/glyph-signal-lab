@@ -1299,16 +1299,31 @@ function updateRangeInputVisual(input) {
   input.style.setProperty('--range-fill-percent', `${clampedPercent}%`)
 }
 
-function beginInlineOutputEdit(id, input, output) {
-  if (!output || output.dataset.editing === 'true') {
-    return
-  }
-
+function applyInlineEditorValue(input, editorValue) {
   const min = Number(input.min)
   const max = Number(input.max)
   const step = input.step === 'any' ? Number.NaN : Number(input.step || '1')
+  const parsedValue = Number(editorValue)
+
+  if (editorValue.trim() === '' || !Number.isFinite(parsedValue)) {
+    return false
+  }
+
+  const nextValue = clampToRangeStep(parsedValue, min, max, step)
+  input.value = String(nextValue)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+
+  return true
+}
+
+function beginInlineOutputEdit(id, input, output) {
+  if (!output || output.dataset.editing === 'true' || input.disabled) {
+    return
+  }
+
   const editor = document.createElement('input')
   let didFinalize = false
+  const initialInputValue = input.value
 
   editor.type = 'number'
   editor.inputMode = 'decimal'
@@ -1339,17 +1354,11 @@ function beginInlineOutputEdit(id, input, output) {
 
     didFinalize = true
 
-    if (mode === 'commit') {
-      const parsedValue = Number(editor.value)
-
-      if (Number.isFinite(parsedValue)) {
-        const nextValue = clampToRangeStep(parsedValue, min, max, step)
-        input.value = String(nextValue)
-        editor.remove()
-        delete output.dataset.editing
-        input.dispatchEvent(new Event('input', { bubbles: true }))
-        return
-      }
+    if (mode === 'cancel') {
+      input.value = initialInputValue
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    } else {
+      applyInlineEditorValue(input, editor.value)
     }
 
     editor.remove()
@@ -1369,8 +1378,28 @@ function beginInlineOutputEdit(id, input, output) {
     }
   })
 
+  const syncLiveValue = () => {
+    applyInlineEditorValue(input, editor.value)
+  }
+
+  editor.addEventListener('input', syncLiveValue)
+  editor.addEventListener('change', syncLiveValue)
   editor.addEventListener('blur', () => {
     finish('commit')
+  })
+}
+
+function setControlDisabled(control, isDisabled) {
+  if (!control) {
+    return
+  }
+
+  control.dataset.disabled = String(isDisabled)
+
+  const interactiveElements = control.querySelectorAll('input, select, button')
+
+  interactiveElements.forEach((element) => {
+    element.disabled = isDisabled
   })
 }
 
@@ -1397,7 +1426,7 @@ function bindControl(id) {
   })
 
   if (input.type === 'range' && output) {
-    output.addEventListener('dblclick', () => {
+    output.addEventListener('click', () => {
       beginInlineOutputEdit(id, input, output)
     })
   }
@@ -1543,6 +1572,17 @@ function updateRenderModeControls() {
   asciiAllCapsControl.hidden = !showAsciiControls
   asciiLetterSpacingControl.hidden = !showAsciiControls
   asciiLineSpacingControl.hidden = !showAsciiControls
+
+  setControlDisabled(asciiPresetControl, !showAsciiControls)
+  setControlDisabled(pixelWidthControl, showAsciiControls)
+  setControlDisabled(ditherModeControl, showAsciiControls)
+  setControlDisabled(asciiColumnsControl, !showAsciiControls)
+  setControlDisabled(asciiCharsetControl, !showAsciiControls)
+  setControlDisabled(asciiFontControl, !showAsciiControls)
+  setControlDisabled(asciiUploadFontControl, !showAsciiControls)
+  setControlDisabled(asciiAllCapsControl, !showAsciiControls)
+  setControlDisabled(asciiLetterSpacingControl, !showAsciiControls)
+  setControlDisabled(asciiLineSpacingControl, !showAsciiControls)
 }
 
 function updateFreezeButton() {

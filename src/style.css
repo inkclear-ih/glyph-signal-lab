@@ -201,6 +201,20 @@ button {
   align-content: start;
 }
 
+.control[data-disabled='true'] {
+  opacity: 0.48;
+}
+
+.control[data-disabled='true'] span,
+.control[data-disabled='true'] output,
+.control[data-disabled='true'] .control-note {
+  color: var(--ui-text-subtle);
+}
+
+.control[data-disabled='true'] output {
+  cursor: default;
+}
+
 .controls-section {
   display: grid;
   gap: 12px;
