@@ -197,275 +197,296 @@ app.innerHTML = `
   <main class="shell">
     <section class="panel">
       <div class="panel-header">
-        <div>
-          <p class="eyebrow">Glyph Signal Lab</p>
-          <h1>Pixel Camera</h1>
-        </div>
+        <p class="eyebrow">Glyph Signal Lab</p>
         <p class="status" id="camera-status" aria-live="polite">Requesting camera...</p>
       </div>
 
-      <section class="controls-panel" aria-label="Render controls">
-        <label class="control">
-          <span>Source</span>
-          <select id="source-type">
-            <option value="camera" selected>Camera</option>
-            <option value="image">Image</option>
-            <option value="video">Video</option>
-          </select>
-        </label>
-
-        <label class="control">
-          <span>Render Mode</span>
-          <select id="render-mode">
-            <option value="bitmap" selected>Bitmap</option>
-            <option value="ascii">ASCII</option>
-          </select>
-        </label>
-
-        <label class="control" id="ascii-preset-control" hidden>
-          <span>ASCII Preset</span>
-          <select id="ascii-preset">
-            <option value="terminal">Terminal</option>
-            <option value="dense">Dense</option>
-            <option value="clean">Clean</option>
-            <option value="blocks">Blocks</option>
-            <option value="blueprint">Blueprint</option>
-            <option value="minimal">Minimal</option>
-            <option value="custom">Custom</option>
-          </select>
-        </label>
-
-        <div class="control control-actions">
-          <span>Source File</span>
-          <div class="button-row">
-            <button id="choose-file" type="button" class="button-secondary" hidden>Choose File</button>
+      <div class="studio-layout">
+        <section class="preview-column">
+          <div class="preview-frame preview-frame-main" id="main-preview-frame">
+            <canvas
+              id="pixel-output"
+              class="pixel-output"
+              aria-label="Processed source output"
+            ></canvas>
+            <button
+              id="fullscreen-toggle"
+              class="preview-overlay-button"
+              type="button"
+              aria-label="Enter fullscreen"
+              title="Toggle fullscreen"
+            >Fullscreen</button>
           </div>
-          <small class="control-note" id="source-file-note">Live camera is active.</small>
-        </div>
+        </section>
 
-        <label class="control" id="pixel-width-control">
-          <span>Bitmap Width</span>
-          <input
-            id="pixel-width"
-            type="range"
-            min="48"
-            max="${LIVE_BITMAP_WIDTH_MAX}"
-            step="4"
-            value="${settings.pixelWidth}"
-          />
-          <output id="pixel-width-value">${formatBitmapWidth(settings.pixelWidth)}</output>
-        </label>
+        <aside class="side-panel">
+          <section class="controls-panel" aria-label="Render controls">
+            <div class="controls-section">
+              <div class="controls-section-label">Input</div>
 
-        <label class="control" id="ascii-columns-control" hidden>
-          <span>Glyph Size</span>
-          <input
-            id="ascii-columns"
-            type="range"
-            min="${ASCII_GLYPH_SIZE_MIN}"
-            max="${ASCII_GLYPH_SIZE_MAX}"
-            step="1"
-            value="${settings.asciiColumns}"
-          />
-          <output id="ascii-columns-value">${formatGlyphSize(settings.asciiColumns)}</output>
-        </label>
+              <label class="control">
+                <span>Source</span>
+                <select id="source-type">
+                  <option value="camera" selected>Camera</option>
+                  <option value="image">Image</option>
+                  <option value="video">Video</option>
+                </select>
+              </label>
 
-        <label class="control" id="ascii-charset-control" hidden>
-          <span>Character Set</span>
-          <input
-            id="ascii-charset"
-            type="text"
-            value="${settings.asciiCharacterSet.replace(/"/g, '&quot;')}"
-            spellcheck="false"
-            autocomplete="off"
-          />
-          <small class="control-note">Characters are used left to right: dark to light.</small>
-        </label>
+              <div class="control control-actions">
+                <span>Source File</span>
+                <div class="button-row">
+                  <button id="choose-file" type="button" class="button-secondary" hidden>Choose File</button>
+                </div>
+                <small class="control-note" id="source-file-note">Live camera is active.</small>
+              </div>
 
-        <label class="control" id="ascii-font-control" hidden>
-          <span>ASCII Font</span>
-          <select id="ascii-font">
-            <option value="monospace" selected>Monospace</option>
-            <option value="studio" disabled>Serrucho 100</option>
-          </select>
-          <small class="control-note" id="ascii-font-note">Serrucho 100 loading...</small>
-        </label>
+              <label class="control">
+                <span>Render Mode</span>
+                <select id="render-mode">
+                  <option value="bitmap" selected>Bitmap</option>
+                  <option value="ascii">ASCII</option>
+                </select>
+              </label>
 
-        <label class="control control-toggle" id="ascii-all-caps-control" hidden>
-          <span>All Caps</span>
-          <input id="ascii-all-caps" type="checkbox" />
-        </label>
+              <label class="control" id="ascii-preset-control" hidden>
+                <span>ASCII Preset</span>
+                <select id="ascii-preset">
+                  <option value="terminal">Terminal</option>
+                  <option value="dense">Dense</option>
+                  <option value="clean">Clean</option>
+                  <option value="blocks">Blocks</option>
+                  <option value="blueprint">Blueprint</option>
+                  <option value="minimal">Minimal</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+            </div>
 
-        <label class="control" id="ascii-letter-spacing-control" hidden>
-          <span>Letter Spacing</span>
-          <input
-            id="ascii-letter-spacing"
-            type="range"
-            min="-15"
-            max="20"
-            step="1"
-            value="${settings.asciiLetterSpacing}"
-          />
-          <output id="ascii-letter-spacing-value">${settings.asciiLetterSpacing}</output>
-        </label>
+            <div class="controls-section">
+              <div class="controls-section-label">Render</div>
 
-        <label class="control" id="ascii-line-spacing-control" hidden>
-          <span>Line Spacing</span>
-          <input
-            id="ascii-line-spacing"
-            type="range"
-            min="-4"
-            max="24"
-            step="1"
-            value="${settings.asciiLineSpacing}"
-          />
-          <output id="ascii-line-spacing-value">${settings.asciiLineSpacing}</output>
-        </label>
+              <label class="control" id="pixel-width-control">
+                <span>Bitmap Width</span>
+                <input
+                  id="pixel-width"
+                  type="range"
+                  min="48"
+                  max="${LIVE_BITMAP_WIDTH_MAX}"
+                  step="4"
+                  value="${settings.pixelWidth}"
+                />
+                <output id="pixel-width-value">${formatBitmapWidth(settings.pixelWidth)}</output>
+              </label>
 
-        <label class="control">
-          <span>Brightness</span>
-          <input
-            id="brightness"
-            type="range"
-            min="-100"
-            max="100"
-            step="1"
-            value="${settings.brightness}"
-          />
-          <output id="brightness-value">${settings.brightness}</output>
-        </label>
+              <label class="control" id="ascii-columns-control" hidden>
+                <span>Glyph Size</span>
+                <input
+                  id="ascii-columns"
+                  type="range"
+                  min="${ASCII_GLYPH_SIZE_MIN}"
+                  max="${ASCII_GLYPH_SIZE_MAX}"
+                  step="1"
+                  value="${settings.asciiColumns}"
+                />
+                <output id="ascii-columns-value">${formatGlyphSize(settings.asciiColumns)}</output>
+              </label>
 
-        <label class="control">
-          <span>Contrast</span>
-          <input
-            id="contrast"
-            type="range"
-            min="0.4"
-            max="2"
-            step="0.05"
-            value="${settings.contrast}"
-          />
-          <output id="contrast-value">${settings.contrast.toFixed(2)}</output>
-        </label>
+              <label class="control" id="ascii-charset-control" hidden>
+                <span>Character Set</span>
+                <input
+                  id="ascii-charset"
+                  type="text"
+                  value="${settings.asciiCharacterSet.replace(/"/g, '&quot;')}"
+                  spellcheck="false"
+                  autocomplete="off"
+                />
+                <small class="control-note">Characters are used left to right: dark to light.</small>
+              </label>
 
-        <label class="control" id="threshold-control">
-          <span>Threshold</span>
-          <input
-            id="threshold"
-            type="range"
-            min="0"
-            max="255"
-            step="1"
-            value="${settings.threshold}"
-          />
-          <output id="threshold-value">${settings.threshold}</output>
-        </label>
+              <label class="control" id="ascii-font-control" hidden>
+                <span>ASCII Font</span>
+                <select id="ascii-font">
+                  <option value="monospace" selected>Monospace</option>
+                  <option value="studio" disabled>Serrucho 100</option>
+                </select>
+                <small class="control-note" id="ascii-font-note">Serrucho 100 loading...</small>
+              </label>
 
-        <label class="control" id="dither-mode-control">
-          <span>Dither Mode</span>
-          <select id="dither-mode">
-            <option value="threshold" selected>Threshold</option>
-            <option value="blue-noise">Blue Noise</option>
-            <option value="bayer-2x2">Bayer 2x2</option>
-            <option value="bayer-4x4">Bayer 4x4</option>
-            <option value="bayer-8x8">Bayer 8x8</option>
-            <option value="horizontal">Horizontal</option>
-          </select>
-        </label>
+              <label class="control control-toggle" id="ascii-all-caps-control" hidden>
+                <span>All Caps</span>
+                <input id="ascii-all-caps" type="checkbox" />
+              </label>
 
-        <label class="control control-toggle">
-          <span>Invert</span>
-          <input id="invert" type="checkbox" />
-        </label>
+              <label class="control" id="ascii-letter-spacing-control" hidden>
+                <span>Letter Spacing</span>
+                <input
+                  id="ascii-letter-spacing"
+                  type="range"
+                  min="-15"
+                  max="20"
+                  step="1"
+                  value="${settings.asciiLetterSpacing}"
+                />
+                <output id="ascii-letter-spacing-value">${settings.asciiLetterSpacing}</output>
+              </label>
 
-        <label class="control">
-          <span>Background</span>
-          <input id="background-color" type="color" value="${settings.backgroundColor}" />
-        </label>
+              <label class="control" id="ascii-line-spacing-control" hidden>
+                <span>Line Spacing</span>
+                <input
+                  id="ascii-line-spacing"
+                  type="range"
+                  min="-4"
+                  max="24"
+                  step="1"
+                  value="${settings.asciiLineSpacing}"
+                />
+                <output id="ascii-line-spacing-value">${settings.asciiLineSpacing}</output>
+              </label>
+            </div>
 
-        <label class="control">
-          <span>Foreground</span>
-          <input id="foreground-color" type="color" value="${settings.foregroundColor}" />
-        </label>
+            <div class="controls-section">
+              <div class="controls-section-label">Image</div>
 
-        <div class="control control-actions">
-          <span>Actions</span>
-          <div class="button-row">
-            <button id="freeze-toggle" type="button">Freeze Frame</button>
-            <button id="reset-controls" type="button" class="button-secondary">Reset</button>
-            <button id="export-png" type="button">Export PNG</button>
-            <button id="export-sequence" type="button">Export PNG Seq</button>
-            <button id="export-webm" type="button">Export WebM</button>
-            <button id="stop-capture" type="button" class="button-secondary" disabled>Stop Capture</button>
+              <label class="control">
+                <span>Brightness</span>
+                <input
+                  id="brightness"
+                  type="range"
+                  min="-100"
+                  max="100"
+                  step="1"
+                  value="${settings.brightness}"
+                />
+                <output id="brightness-value">${settings.brightness}</output>
+              </label>
+
+              <label class="control">
+                <span>Contrast</span>
+                <input
+                  id="contrast"
+                  type="range"
+                  min="0.4"
+                  max="2"
+                  step="0.05"
+                  value="${settings.contrast}"
+                />
+                <output id="contrast-value">${settings.contrast.toFixed(2)}</output>
+              </label>
+
+              <label class="control" id="threshold-control">
+                <span>Threshold</span>
+                <input
+                  id="threshold"
+                  type="range"
+                  min="0"
+                  max="255"
+                  step="1"
+                  value="${settings.threshold}"
+                />
+                <output id="threshold-value">${settings.threshold}</output>
+              </label>
+
+              <label class="control" id="dither-mode-control">
+                <span>Dither Mode</span>
+                <select id="dither-mode">
+                  <option value="threshold" selected>Threshold</option>
+                  <option value="blue-noise">Blue Noise</option>
+                  <option value="bayer-2x2">Bayer 2x2</option>
+                  <option value="bayer-4x4">Bayer 4x4</option>
+                  <option value="bayer-8x8">Bayer 8x8</option>
+                  <option value="horizontal">Horizontal</option>
+                </select>
+              </label>
+
+              <label class="control control-toggle">
+                <span>Invert</span>
+                <input id="invert" type="checkbox" />
+              </label>
+            </div>
+
+            <div class="controls-section">
+              <div class="controls-section-label">Color</div>
+
+              <label class="control">
+                <span>Background</span>
+                <input id="background-color" type="color" value="${settings.backgroundColor}" />
+              </label>
+
+              <label class="control">
+                <span>Foreground</span>
+                <input id="foreground-color" type="color" value="${settings.foregroundColor}" />
+              </label>
+            </div>
+
+            <div class="controls-section controls-section-wide">
+              <div class="controls-section-label">Export</div>
+
+              <label class="control">
+                <span>PNG Export Size</span>
+                <select id="export-scale">
+                  <option value="2048x1152">2048 x 1152</option>
+                  <option value="1920x1080" selected>1920 x 1080</option>
+                  <option value="1600x900">1600 x 900</option>
+                  <option value="1280x720">1280 x 720</option>
+                  <option value="1024x576">1024 x 576</option>
+                  <option value="960x540">960 x 540</option>
+                  <option value="640x360">640 x 360</option>
+                  <option value="320x180">320 x 180</option>
+                  <option value="160x90">160 x 90</option>
+                  <option value="96x54">96 x 54</option>
+                </select>
+                <small class="control-note">Only affects the downloaded PNG, not the live preview.</small>
+              </label>
+
+              <label class="control">
+                <span>Capture Duration</span>
+                <select id="sequence-duration">
+                  <option value="1" selected>1s</option>
+                  <option value="10">10s</option>
+                  <option value="20">20s</option>
+                  <option value="50">50s</option>
+                  <option value="stop">Until stop</option>
+                </select>
+                <small class="control-note">Until stop applies to WebM only.</small>
+              </label>
+
+              <label class="control">
+                <span>Seq FPS</span>
+                <select id="sequence-fps">
+                  <option value="12" selected>12</option>
+                  <option value="24">24</option>
+                </select>
+              </label>
+
+              <div class="control control-actions">
+                <span>Actions</span>
+                <div class="button-row">
+                  <button id="freeze-toggle" type="button">Freeze Frame</button>
+                  <button id="reset-controls" type="button" class="button-secondary">Reset</button>
+                  <button id="export-png" type="button">Export PNG</button>
+                  <button id="export-sequence" type="button">Export PNG Seq</button>
+                  <button id="export-webm" type="button">Export WebM</button>
+                  <button id="stop-capture" type="button" class="button-secondary" disabled>Stop Capture</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="debug-panel">
+            <p class="debug-label" id="debug-label">Raw camera preview</p>
+            <div class="preview-frame preview-frame-debug">
+              <video
+                id="camera-preview"
+                class="camera-preview"
+                autoplay
+                playsinline
+                muted
+              ></video>
+              <img id="image-preview" class="camera-preview" alt="Selected source preview" hidden />
+            </div>
           </div>
-        </div>
-
-        <label class="control">
-          <span>PNG Export Size</span>
-          <select id="export-scale">
-            <option value="2048x1152">2048 x 1152</option>
-            <option value="1920x1080" selected>1920 x 1080</option>
-            <option value="1600x900">1600 x 900</option>
-            <option value="1280x720">1280 x 720</option>
-            <option value="1024x576">1024 x 576</option>
-            <option value="960x540">960 x 540</option>
-            <option value="640x360">640 x 360</option>
-            <option value="320x180">320 x 180</option>
-            <option value="160x90">160 x 90</option>
-            <option value="96x54">96 x 54</option>
-          </select>
-          <small class="control-note">Only affects the downloaded PNG, not the live preview.</small>
-        </label>
-
-        <label class="control">
-          <span>Capture Duration</span>
-          <select id="sequence-duration">
-            <option value="1" selected>1s</option>
-            <option value="10">10s</option>
-            <option value="20">20s</option>
-            <option value="50">50s</option>
-            <option value="stop">Until stop</option>
-          </select>
-          <small class="control-note">Until stop applies to WebM only.</small>
-        </label>
-
-        <label class="control">
-          <span>Seq FPS</span>
-          <select id="sequence-fps">
-            <option value="12" selected>12</option>
-            <option value="24">24</option>
-          </select>
-        </label>
-      </section>
-
-      <div class="output-grid">
-        <div class="preview-frame preview-frame-main" id="main-preview-frame">
-          <canvas
-            id="pixel-output"
-            class="pixel-output"
-            aria-label="Processed source output"
-          ></canvas>
-          <button
-            id="fullscreen-toggle"
-            class="preview-overlay-button"
-            type="button"
-            aria-label="Enter fullscreen"
-            title="Toggle fullscreen"
-          >Fullscreen</button>
-        </div>
-
-        <div class="debug-panel">
-          <p class="debug-label" id="debug-label">Raw camera preview</p>
-          <div class="preview-frame preview-frame-debug">
-            <video
-              id="camera-preview"
-              class="camera-preview"
-              autoplay
-              playsinline
-              muted
-            ></video>
-            <img id="image-preview" class="camera-preview" alt="Selected source preview" hidden />
-          </div>
-        </div>
+        </aside>
       </div>
     </section>
   </main>
@@ -1043,6 +1064,14 @@ function beginInlineOutputEdit(id, input, output) {
   editor.step = input.step || '1'
   editor.value = input.value
   editor.setAttribute('aria-label', `Edit ${id} value`)
+
+  const outputStyles = window.getComputedStyle(output)
+  editor.style.fontSize = outputStyles.fontSize
+  editor.style.fontWeight = outputStyles.fontWeight
+  editor.style.fontFamily = outputStyles.fontFamily
+  editor.style.lineHeight = outputStyles.lineHeight
+  editor.style.letterSpacing = outputStyles.letterSpacing
+  editor.style.textTransform = outputStyles.textTransform
 
   output.dataset.editing = 'true'
   output.hidden = true
