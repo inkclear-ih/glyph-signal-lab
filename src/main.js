@@ -335,30 +335,30 @@ app.innerHTML = `
                   <input id="ascii-all-caps" type="checkbox" />
                 </label>
 
-                <label class="control" id="ascii-letter-spacing-control" hidden>
-                  <span>Letter Spacing</span>
-                  <input
-                    id="ascii-letter-spacing"
-                    type="range"
-                    min="-15"
-                    max="20"
-                    step="1"
-                    value="${settings.asciiLetterSpacing}"
-                  />
-                  <output id="ascii-letter-spacing-value">${settings.asciiLetterSpacing}</output>
+              <label class="control" id="ascii-letter-spacing-control" hidden>
+                <span>Letter Spacing</span>
+                <input
+                  id="ascii-letter-spacing"
+                  type="range"
+                  min="-20"
+                  max="20"
+                  step="1"
+                  value="${settings.asciiLetterSpacing}"
+                />
+                <output id="ascii-letter-spacing-value">${settings.asciiLetterSpacing}</output>
                 </label>
 
-                <label class="control" id="ascii-line-spacing-control" hidden>
-                  <span>Line Spacing</span>
-                  <input
-                    id="ascii-line-spacing"
-                    type="range"
-                    min="-4"
-                    max="24"
-                    step="1"
-                    value="${settings.asciiLineSpacing}"
-                  />
-                  <output id="ascii-line-spacing-value">${settings.asciiLineSpacing}</output>
+              <label class="control" id="ascii-line-spacing-control" hidden>
+                <span>Line Spacing</span>
+                <input
+                  id="ascii-line-spacing"
+                  type="range"
+                  min="-20"
+                  max="24"
+                  step="1"
+                  value="${settings.asciiLineSpacing}"
+                />
+                <output id="ascii-line-spacing-value">${settings.asciiLineSpacing}</output>
                 </label>
               </div>
 
