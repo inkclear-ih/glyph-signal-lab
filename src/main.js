@@ -269,6 +269,18 @@ app.innerHTML = `
                   </select>
                 </label>
 
+                <label class="control" id="dither-mode-control">
+                  <span>Dither Mode</span>
+                  <select id="dither-mode">
+                    <option value="threshold" selected>Threshold</option>
+                    <option value="blue-noise">Blue Noise</option>
+                    <option value="bayer-2x2">Bayer 2x2</option>
+                    <option value="bayer-4x4">Bayer 4x4</option>
+                    <option value="bayer-8x8">Bayer 8x8</option>
+                    <option value="horizontal">Horizontal</option>
+                  </select>
+                </label>
+
                 <label class="control" id="ascii-preset-control" hidden>
                   <span>ASCII Preset</span>
                   <select id="ascii-preset">
@@ -467,18 +479,6 @@ app.innerHTML = `
                     value="${settings.threshold}"
                   />
                   <output id="threshold-value">${settings.threshold}</output>
-                </label>
-
-                <label class="control" id="dither-mode-control">
-                  <span>Dither Mode</span>
-                  <select id="dither-mode">
-                    <option value="threshold" selected>Threshold</option>
-                    <option value="blue-noise">Blue Noise</option>
-                    <option value="bayer-2x2">Bayer 2x2</option>
-                    <option value="bayer-4x4">Bayer 4x4</option>
-                    <option value="bayer-8x8">Bayer 8x8</option>
-                    <option value="horizontal">Horizontal</option>
-                  </select>
                 </label>
 
                 <label class="control control-toggle">
