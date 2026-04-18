@@ -124,7 +124,7 @@ button {
   padding: 12px;
   border-radius: var(--ui-radius-lg);
   border: 1px solid var(--ui-border-soft);
-  background: var(--ui-bg-subtle);
+  background: rgba(236, 236, 236, 0.028);
   margin-top: 0;
 }
 
@@ -221,7 +221,7 @@ button {
   align-content: start;
   padding: 12px;
   border-radius: var(--ui-radius);
-  background: rgba(236, 236, 236, 0.02);
+  background: rgba(236, 236, 236, 0.016);
   border: 1px solid var(--ui-border-faint);
 }
 
@@ -950,7 +950,7 @@ html.is-mobile-shell .tools-panel {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   border-color: rgba(236, 236, 236, 0.14);
-  background: rgba(17, 17, 18, 0.9);
+  background: rgba(17, 17, 18, 0.86);
   box-shadow: 0 14px 48px rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(24px);
 }
