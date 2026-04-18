@@ -2,6 +2,8 @@ import './style.css'
 
 const app = document.querySelector('#app')
 const LIVE_BITMAP_WIDTH_MAX = 640
+const MOBILE_SHELL_MAX_WIDTH = 920
+const MOBILE_SHELL_MAX_HEIGHT = 560
 const DEFAULT_ASCII_CHARSET = '@%#*+=-:. '
 const IH_MARK_URL = `${import.meta.env.BASE_URL}IH.svg`
 const ASCII_FONT_MODES = {
@@ -235,6 +237,14 @@ app.innerHTML = `
               aria-label="Enter fullscreen"
               title="Toggle fullscreen"
             >Fullscreen</button>
+            <button
+              id="camera-switch"
+              class="preview-overlay-button camera-switch-button"
+              type="button"
+              aria-label="Switch camera"
+              title="Switch camera"
+              hidden
+            >Flip</button>
           </div>
         </section>
 
@@ -547,6 +557,7 @@ const imageEl = document.querySelector('#image-preview')
 const outputCanvas = document.querySelector('#pixel-output')
 const outputContext = outputCanvas.getContext('2d')
 const mainPreviewFrame = document.querySelector('#main-preview-frame')
+const cameraSwitchButton = document.querySelector('#camera-switch')
 const fileInput = document.createElement('input')
 const fontUploadInput = document.createElement('input')
 const asciiPresetControl = document.querySelector('#ascii-preset-control')
@@ -592,6 +603,12 @@ let pendingSourceType = null
 let currentFileUrl = null
 let currentFileName = ''
 let cameraStream = null
+let isMobileShell = false
+let isSwitchingCamera = false
+let hasEnumeratedVideoInputs = false
+let videoInputDevices = []
+let activeVideoDeviceId = null
+let activeCameraFacingMode = 'user'
 const asciiCustomFontStatuses = Object.fromEntries(
   Object.keys(ASCII_BUILTIN_CUSTOM_FONTS).map((mode) => [mode, 'loading']),
 )
@@ -612,6 +629,58 @@ asciiSourceContext.imageSmoothingEnabled = false
 function setStatus(message, tone = 'muted') {
   statusEl.textContent = message
   statusEl.dataset.tone = tone
+}
+
+function getViewportSize() {
+  const viewport = window.visualViewport
+
+  return {
+    width: viewport?.width ?? window.innerWidth,
+    height: viewport?.height ?? window.innerHeight,
+  }
+}
+
+function hasCoarseOrTouchInput() {
+  return window.matchMedia('(pointer: coarse), (hover: none)').matches || navigator.maxTouchPoints > 0
+}
+
+function shouldUseMobileShell() {
+  const { width, height } = getViewportSize()
+  const hasCompactAxis = width <= MOBILE_SHELL_MAX_WIDTH || height <= MOBILE_SHELL_MAX_HEIGHT
+
+  return hasCompactAxis && hasCoarseOrTouchInput()
+}
+
+function updateMobileShellState() {
+  const { width, height } = getViewportSize()
+  const nextIsMobileShell = shouldUseMobileShell()
+  const isLandscape = width > height
+  const root = document.documentElement
+
+  isMobileShell = nextIsMobileShell
+  root.style.setProperty('--mobile-shell-vh', `${height}px`)
+  root.classList.toggle('is-mobile-shell', nextIsMobileShell)
+  root.classList.toggle('is-mobile-portrait', nextIsMobileShell && !isLandscape)
+  root.classList.toggle('is-mobile-landscape', nextIsMobileShell && isLandscape)
+  updateCameraSwitchButton()
+}
+
+function canShowCameraSwitchButton() {
+  return Boolean(
+    isMobileShell
+      && currentSourceType === SOURCE_TYPES.camera
+      && cameraStream
+      && navigator.mediaDevices?.getUserMedia
+      && (!hasEnumeratedVideoInputs || videoInputDevices.length > 1),
+  )
+}
+
+function updateCameraSwitchButton() {
+  const canShow = canShowCameraSwitchButton()
+
+  cameraSwitchButton.hidden = !canShow
+  cameraSwitchButton.disabled = !canShow || isSwitchingCamera || hasActiveCaptureOperation()
+  cameraSwitchButton.setAttribute('aria-busy', String(isSwitchingCamera))
 }
 
 function hexToRgb(hex) {
@@ -1549,6 +1618,8 @@ function stopCameraStream() {
 
   cameraStream.getTracks().forEach((track) => track.stop())
   cameraStream = null
+  activeVideoDeviceId = null
+  updateCameraSwitchButton()
 }
 
 function clearVideoSource() {
@@ -1565,6 +1636,102 @@ function clearImageSource() {
 function resetFreezeState() {
   isFrozen = false
   updateFreezeButton()
+}
+
+function getActiveVideoTrack() {
+  return cameraStream?.getVideoTracks()[0] ?? null
+}
+
+function updateActiveCameraMetadata() {
+  const settings = getActiveVideoTrack()?.getSettings?.() ?? {}
+
+  activeVideoDeviceId = settings.deviceId ?? null
+
+  if (settings.facingMode === 'user' || settings.facingMode === 'environment') {
+    activeCameraFacingMode = settings.facingMode
+  }
+}
+
+async function refreshCameraDevices() {
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    hasEnumeratedVideoInputs = false
+    videoInputDevices = []
+    updateCameraSwitchButton()
+    return
+  }
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices()
+
+    videoInputDevices = devices.filter((device) => device.kind === 'videoinput')
+    hasEnumeratedVideoInputs = true
+  } catch {
+    hasEnumeratedVideoInputs = false
+    videoInputDevices = []
+  }
+
+  updateCameraSwitchButton()
+}
+
+function getNextCameraDeviceId() {
+  if (videoInputDevices.length < 2) {
+    return null
+  }
+
+  const activeIndex = videoInputDevices.findIndex((device) => device.deviceId === activeVideoDeviceId)
+  const nextIndex = activeIndex >= 0 ? (activeIndex + 1) % videoInputDevices.length : 0
+
+  return videoInputDevices[nextIndex]?.deviceId ?? null
+}
+
+function getNextFacingMode() {
+  return activeCameraFacingMode === 'environment' ? 'user' : 'environment'
+}
+
+function getCameraSwitchConstraintCandidates() {
+  const nextDeviceId = getNextCameraDeviceId()
+  const nextFacingMode = getNextFacingMode()
+  const candidates = []
+
+  if (nextDeviceId) {
+    candidates.push({ deviceId: { exact: nextDeviceId } })
+  }
+
+  candidates.push({ facingMode: { exact: nextFacingMode } })
+  candidates.push({ facingMode: { ideal: nextFacingMode } })
+
+  return candidates
+}
+
+async function requestCameraStream(videoConstraints = true) {
+  return navigator.mediaDevices.getUserMedia({
+    video: videoConstraints,
+    audio: false,
+  })
+}
+
+async function activateCameraStream(stream) {
+  const previousStream = cameraStream
+  const previousSource = videoEl.srcObject
+
+  videoEl.srcObject = stream
+
+  try {
+    await videoEl.play()
+  } catch (error) {
+    videoEl.srcObject = previousSource
+    stream.getTracks().forEach((track) => track.stop())
+    throw error
+  }
+
+  cameraStream = stream
+
+  if (previousStream && previousStream !== stream) {
+    previousStream.getTracks().forEach((track) => track.stop())
+  }
+
+  updateActiveCameraMetadata()
+  await refreshCameraDevices()
 }
 
 function setDebugPreview(type) {
@@ -1633,6 +1800,7 @@ function updateSourceControls() {
   sourceTypeInput.disabled = isLocked
   fileInput.accept = displayedSourceType === SOURCE_TYPES.image ? 'image/*' : 'video/*'
   updateSourceFileNote()
+  updateCameraSwitchButton()
 }
 
 function updateRenderModeControls() {
@@ -1995,6 +2163,40 @@ async function switchSource(nextSourceType) {
   await promptForFile()
 }
 
+async function switchCamera() {
+  if (
+    isSwitchingCamera
+      || currentSourceType !== SOURCE_TYPES.camera
+      || !cameraStream
+      || !navigator.mediaDevices?.getUserMedia
+  ) {
+    return
+  }
+
+  isSwitchingCamera = true
+  updateCameraSwitchButton()
+  setStatus('Switching camera...', 'muted')
+
+  try {
+    for (const videoConstraints of getCameraSwitchConstraintCandidates()) {
+      try {
+        const stream = await requestCameraStream(videoConstraints)
+
+        await activateCameraStream(stream)
+        setStatus('Camera switched.', 'success')
+        return
+      } catch {
+        // Try the next available camera constraint before giving up.
+      }
+    }
+
+    setStatus('Camera switch unavailable. Keeping current camera.', 'error')
+  } finally {
+    isSwitchingCamera = false
+    updateCameraSwitchButton()
+  }
+}
+
 bindControl('pixel-width')
 bindControl('ascii-columns')
 bindControl('ascii-letter-spacing')
@@ -2114,6 +2316,10 @@ rawPreviewToggleButton.addEventListener('click', () => {
 
 sourceTypeInput.addEventListener('input', async (event) => {
   await switchSource(event.target.value)
+})
+
+cameraSwitchButton.addEventListener('click', async () => {
+  await switchCamera()
 })
 
 chooseFileButton.addEventListener('click', async () => {
@@ -2338,6 +2544,29 @@ fullscreenToggleButton.addEventListener('click', async () => {
 })
 
 document.addEventListener('fullscreenchange', updateFullscreenButton)
+window.addEventListener('resize', updateMobileShellState)
+window.addEventListener('orientationchange', updateMobileShellState)
+window.visualViewport?.addEventListener('resize', updateMobileShellState)
+const mobileShellMediaQueries = [
+  `(max-width: ${MOBILE_SHELL_MAX_WIDTH}px)`,
+  `(max-height: ${MOBILE_SHELL_MAX_HEIGHT}px)`,
+  '(pointer: coarse)',
+  '(hover: none)',
+]
+
+mobileShellMediaQueries.forEach((query) => {
+  const mediaQuery = window.matchMedia(query)
+
+  if (mediaQuery.addEventListener) {
+    mediaQuery.addEventListener('change', updateMobileShellState)
+    return
+  }
+
+  mediaQuery.addListener?.(updateMobileShellState)
+})
+navigator.mediaDevices?.addEventListener?.('devicechange', () => {
+  void refreshCameraDevices()
+})
 
 exportSequenceButton.addEventListener('click', async () => {
   if (!outputCanvas.width || !outputCanvas.height) {
@@ -2462,6 +2691,7 @@ function startRenderLoop() {
 async function startCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
     setStatus('Camera unavailable in this browser.', 'error')
+    updateCameraSwitchButton()
     return
   }
 
@@ -2469,15 +2699,13 @@ async function startCamera() {
   setStatus('Requesting camera...', 'muted')
 
   try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: false,
-    })
+    const stream = await requestCameraStream()
 
-    videoEl.srcObject = cameraStream
-    await videoEl.play()
+    await activateCameraStream(stream)
     setStatus('Camera ready.', 'success')
   } catch (error) {
+    updateCameraSwitchButton()
+
     if (error.name === 'NotAllowedError') {
       setStatus('Permission denied.', 'error')
       return
@@ -2492,6 +2720,7 @@ async function startCamera() {
   }
 }
 
+updateMobileShellState()
 syncControlValues()
 updateRenderModeControls()
 updateSourceControls()

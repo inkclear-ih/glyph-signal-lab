@@ -674,6 +674,17 @@ button {
   background: rgba(34, 34, 35, 0.92);
 }
 
+.preview-overlay-button[hidden] {
+  display: none;
+}
+
+.camera-switch-button {
+  left: 12px;
+  right: auto;
+  top: 12px;
+  bottom: auto;
+}
+
 .camera-preview {
   object-fit: cover;
 }
@@ -823,4 +834,224 @@ button {
   .controls-section-raw {
     grid-column: auto;
   }
+}
+
+html.is-mobile-shell,
+html.is-mobile-shell body,
+html.is-mobile-shell #app {
+  width: 100%;
+  height: var(--mobile-shell-vh, 100dvh);
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html.is-mobile-shell .shell,
+html.is-mobile-shell .panel {
+  width: 100%;
+  height: var(--mobile-shell-vh, 100dvh);
+  min-height: 0;
+  overflow: hidden;
+}
+
+html.is-mobile-shell .panel {
+  --ui-slider-track-height: 6px;
+  --ui-slider-thumb-size: 22px;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  padding:
+    max(8px, env(safe-area-inset-top))
+    max(10px, env(safe-area-inset-right))
+    max(10px, env(safe-area-inset-bottom))
+    max(10px, env(safe-area-inset-left));
+}
+
+html.is-mobile-shell .panel-header {
+  min-width: 0;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  z-index: 5;
+}
+
+html.is-mobile-shell .panel-brand {
+  gap: 8px;
+}
+
+html.is-mobile-shell .eyebrow-mark {
+  height: 24px;
+}
+
+html.is-mobile-shell .eyebrow {
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.is-mobile-shell .status {
+  max-width: min(48vw, 220px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html.is-mobile-shell .studio-layout {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  overflow: hidden;
+}
+
+html.is-mobile-shell .preview-column {
+  grid-column: 1;
+  grid-row: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  align-content: stretch;
+}
+
+html.is-mobile-shell .preview-frame-main {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ui-border-soft);
+  background: #05060a;
+}
+
+html.is-mobile-shell .preview-frame-main .pixel-output {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+html.is-mobile-shell .tools-column {
+  position: absolute;
+  z-index: 4;
+  min-width: 0;
+  display: grid;
+  align-content: stretch;
+}
+
+html.is-mobile-shell .tools-panel {
+  height: 100%;
+  min-height: 0;
+  padding: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border-color: rgba(236, 236, 236, 0.14);
+  background: rgba(17, 17, 18, 0.9);
+  box-shadow: 0 14px 48px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(24px);
+}
+
+html.is-mobile-shell .tools-grid {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+html.is-mobile-shell .controls-section,
+html.is-mobile-shell .controls-section-image,
+html.is-mobile-shell .controls-section-color,
+html.is-mobile-shell .controls-section-raw {
+  grid-column: auto;
+}
+
+html.is-mobile-shell .control {
+  gap: 9px;
+}
+
+html.is-mobile-shell .control input[type='text'],
+html.is-mobile-shell .control select,
+html.is-mobile-shell .control input[type='color'],
+html.is-mobile-shell .button-row button,
+html.is-mobile-shell .button-row .button-secondary {
+  min-height: 40px;
+  height: auto;
+}
+
+html.is-mobile-shell .control-toggle input {
+  width: 24px;
+  height: 24px;
+}
+
+html.is-mobile-shell .preview-overlay-button {
+  min-width: 44px;
+  min-height: 36px;
+  padding: 0 11px;
+  background: rgba(16, 16, 17, 0.74);
+}
+
+html.is-mobile-shell #fullscreen-toggle {
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  bottom: auto;
+}
+
+html.is-mobile-portrait .tools-column {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: clamp(220px, 36%, 340px);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+html.is-mobile-portrait .tools-panel {
+  border-radius: var(--ui-radius-lg) var(--ui-radius-lg) 0 0;
+}
+
+html.is-mobile-portrait .camera-switch-button {
+  left: max(12px, env(safe-area-inset-left));
+  top: max(12px, env(safe-area-inset-top));
+  right: auto;
+  bottom: auto;
+}
+
+html.is-mobile-landscape .panel {
+  position: relative;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+html.is-mobile-landscape .panel-header {
+  position: absolute;
+  left: max(10px, env(safe-area-inset-left));
+  top: max(8px, env(safe-area-inset-top));
+  max-width: calc(100% - min(42vw, 360px) - 28px);
+  pointer-events: none;
+}
+
+html.is-mobile-landscape .status {
+  max-width: min(34vw, 190px);
+}
+
+html.is-mobile-landscape .tools-column {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(42vw, 360px);
+  padding-right: env(safe-area-inset-right);
+}
+
+html.is-mobile-landscape .tools-panel {
+  border-radius: var(--ui-radius-lg) 0 0 var(--ui-radius-lg);
+}
+
+html.is-mobile-landscape #fullscreen-toggle {
+  right: calc(min(42vw, 360px) + 12px);
+}
+
+html.is-mobile-landscape .camera-switch-button {
+  left: max(12px, env(safe-area-inset-left));
+  right: auto;
+  top: auto;
+  bottom: max(12px, env(safe-area-inset-bottom));
 }
