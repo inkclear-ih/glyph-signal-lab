@@ -691,7 +691,23 @@ function updateMobileShellState() {
   root.classList.toggle('is-mobile-shell', nextIsMobileShell)
   root.classList.toggle('is-mobile-portrait', nextIsMobileShell && !isLandscape)
   root.classList.toggle('is-mobile-landscape', nextIsMobileShell && isLandscape)
+  updateRawCameraPreviewOrientation()
   updateCameraSwitchButton()
+}
+
+function updateRawCameraPreviewOrientation() {
+  const shouldRotateRawCameraPreview = Boolean(
+    currentSourceType === SOURCE_TYPES.camera
+      && isMobileShell
+      && document.documentElement.classList.contains('is-mobile-portrait')
+      && videoEl.srcObject
+      && videoEl.videoWidth > videoEl.videoHeight,
+  )
+
+  document.documentElement.classList.toggle(
+    'is-raw-camera-preview-rotated',
+    shouldRotateRawCameraPreview,
+  )
 }
 
 function canShowCameraSwitchButton() {
@@ -1648,6 +1664,7 @@ function stopCameraStream() {
   cameraStream.getTracks().forEach((track) => track.stop())
   cameraStream = null
   activeVideoDeviceId = null
+  updateRawCameraPreviewOrientation()
   updateCameraSwitchButton()
 }
 
@@ -1656,6 +1673,7 @@ function clearVideoSource() {
   videoEl.srcObject = null
   videoEl.removeAttribute('src')
   videoEl.load()
+  updateRawCameraPreviewOrientation()
 }
 
 function clearImageSource() {
@@ -1759,6 +1777,7 @@ async function activateCameraStream(stream) {
     previousStream.getTracks().forEach((track) => track.stop())
   }
 
+  updateRawCameraPreviewOrientation()
   updateActiveCameraMetadata()
   await refreshCameraDevices()
 }
@@ -1766,6 +1785,7 @@ async function activateCameraStream(stream) {
 function setDebugPreview(type) {
   const showImage = type === SOURCE_TYPES.image
   document.documentElement.classList.toggle('is-raw-camera-preview', type === SOURCE_TYPES.camera)
+  updateRawCameraPreviewOrientation()
   imageEl.hidden = !showImage
   videoEl.hidden = showImage
   debugLabel.textContent = showImage
@@ -2574,6 +2594,8 @@ fullscreenToggleButton.addEventListener('click', async () => {
 })
 
 document.addEventListener('fullscreenchange', updateFullscreenButton)
+videoEl.addEventListener('loadedmetadata', updateRawCameraPreviewOrientation)
+videoEl.addEventListener('resize', updateRawCameraPreviewOrientation)
 window.addEventListener('resize', updateMobileShellState)
 window.addEventListener('orientationchange', updateMobileShellState)
 window.visualViewport?.addEventListener('resize', updateMobileShellState)
