@@ -1014,6 +1014,17 @@ html.is-mobile-portrait .preview-frame-main .pixel-output {
   object-fit: cover;
 }
 
+html.is-mobile-portrait.is-raw-camera-preview .controls-section-raw .preview-frame-debug {
+  aspect-ratio: 9 / 16;
+  width: min(100%, 240px);
+  margin-inline: auto;
+}
+
+html.is-mobile-portrait.is-raw-camera-preview .controls-section-raw .camera-preview {
+  object-fit: contain;
+  object-position: center;
+}
+
 html.is-mobile-portrait .camera-switch-button {
   left: max(12px, env(safe-area-inset-left));
   top: max(12px, env(safe-area-inset-top));

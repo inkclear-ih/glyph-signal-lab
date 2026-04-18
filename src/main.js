@@ -4,6 +4,8 @@ const app = document.querySelector('#app')
 const LIVE_BITMAP_WIDTH_MAX = 640
 const MOBILE_SHELL_MAX_WIDTH = 920
 const MOBILE_SHELL_MAX_HEIGHT = 560
+const MOBILE_PORTRAIT_CAMERA_WIDTH = 720
+const MOBILE_PORTRAIT_CAMERA_HEIGHT = 1280
 const DEFAULT_ASCII_CHARSET = '@%#*+=-:. '
 const IH_MARK_URL = `${import.meta.env.BASE_URL}IH.svg`
 const ASCII_FONT_MODES = {
@@ -649,6 +651,33 @@ function shouldUseMobileShell() {
   const hasCompactAxis = width <= MOBILE_SHELL_MAX_WIDTH || height <= MOBILE_SHELL_MAX_HEIGHT
 
   return hasCompactAxis && hasCoarseOrTouchInput()
+}
+
+function shouldRequestPortraitCameraFeed() {
+  const { width, height } = getViewportSize()
+
+  return shouldUseMobileShell() && height >= width
+}
+
+function getCameraStreamConstraints(videoConstraints = true) {
+  if (!shouldRequestPortraitCameraFeed()) {
+    return videoConstraints
+  }
+
+  const portraitConstraints = {
+    width: { ideal: MOBILE_PORTRAIT_CAMERA_WIDTH },
+    height: { ideal: MOBILE_PORTRAIT_CAMERA_HEIGHT },
+    aspectRatio: { ideal: MOBILE_PORTRAIT_CAMERA_WIDTH / MOBILE_PORTRAIT_CAMERA_HEIGHT },
+  }
+
+  if (videoConstraints === true) {
+    return portraitConstraints
+  }
+
+  return {
+    ...portraitConstraints,
+    ...videoConstraints,
+  }
 }
 
 function updateMobileShellState() {
@@ -1705,7 +1734,7 @@ function getCameraSwitchConstraintCandidates() {
 
 async function requestCameraStream(videoConstraints = true) {
   return navigator.mediaDevices.getUserMedia({
-    video: videoConstraints,
+    video: getCameraStreamConstraints(videoConstraints),
     audio: false,
   })
 }
@@ -1736,6 +1765,7 @@ async function activateCameraStream(stream) {
 
 function setDebugPreview(type) {
   const showImage = type === SOURCE_TYPES.image
+  document.documentElement.classList.toggle('is-raw-camera-preview', type === SOURCE_TYPES.camera)
   imageEl.hidden = !showImage
   videoEl.hidden = showImage
   debugLabel.textContent = showImage
