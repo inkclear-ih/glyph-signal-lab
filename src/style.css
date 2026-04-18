@@ -1025,6 +1025,18 @@ html.is-mobile-portrait.is-raw-camera-preview .controls-section-raw .camera-prev
   object-position: center;
 }
 
+html.is-mobile-portrait.is-raw-camera-preview.is-raw-camera-preview-rotated .controls-section-raw .camera-preview {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: calc(100% * 16 / 9);
+  height: calc(100% * 9 / 16);
+  max-width: none;
+  object-fit: cover;
+  transform: translate(-50%, -50%) rotate(90deg);
+  transform-origin: center;
+}
+
 html.is-mobile-portrait .camera-switch-button {
   left: max(12px, env(safe-area-inset-left));
   top: max(12px, env(safe-area-inset-top));
